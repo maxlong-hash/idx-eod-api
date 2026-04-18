@@ -141,19 +141,16 @@ Contoh:
 
 Kolom CSV:
 
-- `ticker`
-- `date`
-- `open`
-- `high`
-- `low`
-- `close`
-- `volume`
-- `tradeFrequency`
-- `tradeValue`
-- `nbsa`
-- `previousClose`
-- `change`
-- `changePercent`
+- `<date>`
+- `<ticker>`
+- `<open>`
+- `<high>`
+- `<low>`
+- `<close>`
+- `<volume>`
+- `<freq>`
+- `<valuasi>`
+- `<nbsa>`
 
 ## Koneksi ke client lokal berbasis stdio
 

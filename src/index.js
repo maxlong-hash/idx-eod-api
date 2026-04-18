@@ -71,19 +71,16 @@ function csvEscape(value) {
 
 function serializeRecordsToCsv(records) {
   const headers = [
-    'ticker',
-    'date',
-    'open',
-    'high',
-    'low',
-    'close',
-    'volume',
-    'tradeFrequency',
-    'tradeValue',
-    'nbsa',
-    'previousClose',
-    'change',
-    'changePercent'
+    '<date>',
+    '<ticker>',
+    '<open>',
+    '<high>',
+    '<low>',
+    '<close>',
+    '<volume>',
+    '<freq>',
+    '<valuasi>',
+    '<nbsa>'
   ];
 
   const lines = [
@@ -93,8 +90,8 @@ function serializeRecordsToCsv(records) {
   for (const record of records) {
     lines.push(
       [
-        record.ticker,
         record.date,
+        record.ticker,
         record.open,
         record.high,
         record.low,
@@ -102,10 +99,7 @@ function serializeRecordsToCsv(records) {
         record.volume,
         record.tradeFrequency,
         record.tradeValue,
-        record.nbsa,
-        record.previousClose,
-        record.change,
-        record.changePercent
+        record.nbsa
       ]
         .map(csvEscape)
         .join(',')
