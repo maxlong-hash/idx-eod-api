@@ -125,8 +125,35 @@ Kalau yang kamu pakai adalah layar `Add actions`, pakai jalur REST/OpenAPI, buka
    - `Ambil data EOD BBCA tanggal 2026-04-17`
    - `Tampilkan history BBRI 30 hari terakhir`
    - `Ringkas market summary tanggal 2026-04-17`
+   - `Ambil raw CSV BBCA dari 2023 sampai terbaru dengan OHLCV, freq, value, dan nbsa`
 
 Kalau kamu ingin paste manual schema-nya ke kotak `Schema`, ambil isi JSON dari `/openapi.json`.
+
+## Output CSV
+
+Endpoint `GET /api/eod/history` juga bisa mengembalikan CSV.
+
+Contoh:
+
+```text
+/api/eod/history?ticker=BBCA&startDate=2023-01-01&endDate=2026-04-17&order=asc&format=csv
+```
+
+Kolom CSV:
+
+- `ticker`
+- `date`
+- `open`
+- `high`
+- `low`
+- `close`
+- `volume`
+- `tradeFrequency`
+- `tradeValue`
+- `nbsa`
+- `previousClose`
+- `change`
+- `changePercent`
 
 ## Koneksi ke client lokal berbasis stdio
 

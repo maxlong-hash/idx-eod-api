@@ -100,7 +100,7 @@ export function buildOpenApiSchema(baseUrl) {
           operationId: 'getEodHistory',
           summary: 'Get EOD history',
           description:
-            'Returns historical raw EOD rows for a ticker within an optional date range. If limit is omitted, requests with a date range return up to 2000 rows; otherwise 30 rows.',
+            'Returns historical raw EOD rows for a ticker within an optional date range. If limit is omitted, requests with a date range return up to 2000 rows; otherwise 30 rows. Use format=csv for raw CSV output.',
           parameters: [
             {
               name: 'ticker',
@@ -153,6 +153,17 @@ export function buildOpenApiSchema(baseUrl) {
                 default: 'desc'
               },
               description: 'Sort order.'
+            },
+            {
+              name: 'format',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['json', 'csv'],
+                default: 'json'
+              },
+              description: 'Response format. Use csv for spreadsheet-friendly raw export.'
             }
           ],
           responses: {
@@ -162,6 +173,11 @@ export function buildOpenApiSchema(baseUrl) {
                 'application/json': {
                   schema: {
                     $ref: '#/components/schemas/EodHistoryResponse'
+                  }
+                },
+                'text/csv': {
+                  schema: {
+                    type: 'string'
                   }
                 }
               }

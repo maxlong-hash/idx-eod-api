@@ -56,6 +56,65 @@ function sendError(response, statusCode, message) {
   response.status(statusCode).json({ error: message });
 }
 
+function csvEscape(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  const stringValue = String(value);
+  if (/[",\r\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+
+  return stringValue;
+}
+
+function serializeRecordsToCsv(records) {
+  const headers = [
+    'ticker',
+    'date',
+    'open',
+    'high',
+    'low',
+    'close',
+    'volume',
+    'tradeFrequency',
+    'tradeValue',
+    'nbsa',
+    'previousClose',
+    'change',
+    'changePercent'
+  ];
+
+  const lines = [
+    headers.join(',')
+  ];
+
+  for (const record of records) {
+    lines.push(
+      [
+        record.ticker,
+        record.date,
+        record.open,
+        record.high,
+        record.low,
+        record.close,
+        record.volume,
+        record.tradeFrequency,
+        record.tradeValue,
+        record.nbsa,
+        record.previousClose,
+        record.change,
+        record.changePercent
+      ]
+        .map(csvEscape)
+        .join(',')
+    );
+  }
+
+  return lines.join('\n');
+}
+
 async function startStdioServer(store) {
   const server = createEodMcpServer(store);
   const transport = new StdioServerTransport();
@@ -180,6 +239,13 @@ async function startHttpServer(store, options) {
       const defaultLimit = startDate || endDate ? 2000 : 30;
       const limit = Math.min(parsePositiveInteger(request.query.limit, defaultLimit), 2000);
       const order = request.query.order === 'asc' ? 'asc' : 'desc';
+      const format = String(request.query.format ?? 'json').trim().toLowerCase();
+
+      if (format !== 'json' && format !== 'csv') {
+        sendError(response, 400, 'format must be either json or csv');
+        return;
+      }
+
       const records = store.getHistory({
         ticker,
         startDate,
@@ -187,13 +253,21 @@ async function startHttpServer(store, options) {
         limit,
         order
       });
+      const serializedRecords = records.map((record) => store.serializeRecord(record));
+
+      if (format === 'csv') {
+        response
+          .type('text/csv; charset=utf-8')
+          .send(serializeRecordsToCsv(serializedRecords));
+        return;
+      }
 
       response.json({
         ticker: ticker.toUpperCase(),
         startDate: startDate ?? null,
         endDate: endDate ?? null,
         returned: records.length,
-        records: records.map((record) => store.serializeRecord(record))
+        records: serializedRecords
       });
     } catch (error) {
       sendError(response, 400, error.message);
