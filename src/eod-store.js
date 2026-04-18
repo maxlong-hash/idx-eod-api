@@ -366,7 +366,7 @@ export class EodDataStore {
     return this.recordsByTickerDate.get(normalizedTicker)?.get(normalizedDate) ?? null;
   }
 
-  getHistory({ ticker, startDate, endDate, limit = 30, order = 'desc' }) {
+  getHistory({ ticker, startDate, endDate, limit = null, order = 'asc' }) {
     const normalizedTicker = String(ticker).trim().toUpperCase();
     const records = this.recordsByTicker.get(normalizedTicker);
     if (!records || records.length === 0) {
@@ -396,6 +396,10 @@ export class EodDataStore {
 
     if (order === 'desc') {
       filtered = filtered.slice().reverse();
+    }
+
+    if (limit === null || limit === undefined) {
+      return filtered;
     }
 
     return filtered.slice(0, limit);

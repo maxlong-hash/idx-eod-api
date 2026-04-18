@@ -39,19 +39,6 @@ function resolveOptions() {
   };
 }
 
-function parsePositiveInteger(value, fallback) {
-  if (value === undefined || value === null || value === '') {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return fallback;
-  }
-
-  return parsed;
-}
-
 function sendError(response, statusCode, message) {
   response.status(statusCode).json({ error: message });
 }
@@ -137,6 +124,7 @@ async function startHttpServer(store, options) {
       mcpEndpoint: '/mcp',
       openApiEndpoint: '/openapi.json',
       privacyPolicyEndpoint: '/privacy',
+      historyEndpoint: '/api/eod/history',
       stats: store.getStats()
     });
   });
@@ -158,10 +146,10 @@ async function startHttpServer(store, options) {
 </head>
 <body style="font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; line-height: 1.6;">
   <h1>IDX EOD API Privacy Policy</h1>
-  <p>This API provides read-only access to IDX end-of-day stock market data from a locally maintained dataset.</p>
+  <p>This API provides read-only access to raw IDX end-of-day stock market history from a locally maintained dataset.</p>
   <p>The API does not require account login and does not intentionally store end-user personal information submitted through requests.</p>
   <p>Basic server logs may record request metadata such as timestamps and IP addresses for reliability and abuse prevention.</p>
-  <p>Data returned by this API is limited to market data records and derived summaries.</p>
+  <p>Data returned by this API is limited to raw market history records for a ticker and date range.</p>
   <p>Operator contact: replace this text with your real contact email before publishing publicly.</p>
   <p>Service base URL: <a href="${baseUrl}">${baseUrl}</a></p>
 </body>
@@ -171,53 +159,6 @@ async function startHttpServer(store, options) {
   app.get('/openapi.json', async (request, response) => {
     const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
     response.json(buildOpenApiSchema(baseUrl));
-  });
-
-  app.get('/api/eod/latest-date', async (request, response) => {
-    try {
-      const ticker = request.query.ticker ? String(request.query.ticker) : undefined;
-      const latestDate = store.getLatestAvailableDate(ticker);
-
-      if (!latestDate) {
-        sendError(response, 404, ticker ? `No data found for ticker ${ticker}` : 'Dataset is empty');
-        return;
-      }
-
-      response.json({
-        ticker: ticker?.toUpperCase() ?? null,
-        latestDate
-      });
-    } catch (error) {
-      sendError(response, 400, error.message);
-    }
-  });
-
-  app.get('/api/eod/record', async (request, response) => {
-    try {
-      const ticker = String(request.query.ticker ?? '').trim();
-      const date = request.query.date ? String(request.query.date) : undefined;
-
-      if (!ticker) {
-        sendError(response, 400, 'ticker is required');
-        return;
-      }
-
-      const record = store.getRecord(ticker, date);
-      if (!record) {
-        sendError(
-          response,
-          404,
-          date
-            ? `No EOD record found for ${ticker.toUpperCase()} on ${date}`
-            : `No EOD record found for ${ticker.toUpperCase()}`
-        );
-        return;
-      }
-
-      response.json(store.serializeRecord(record));
-    } catch (error) {
-      sendError(response, 400, error.message);
-    }
   });
 
   app.get('/api/eod/history', async (request, response) => {
@@ -230,9 +171,7 @@ async function startHttpServer(store, options) {
 
       const startDate = request.query.startDate ? String(request.query.startDate) : undefined;
       const endDate = request.query.endDate ? String(request.query.endDate) : undefined;
-      const defaultLimit = startDate || endDate ? 2000 : 30;
-      const limit = Math.min(parsePositiveInteger(request.query.limit, defaultLimit), 2000);
-      const order = request.query.order === 'asc' ? 'asc' : 'desc';
+      const order = request.query.order === 'desc' ? 'desc' : 'asc';
       const format = String(request.query.format ?? 'json').trim().toLowerCase();
 
       if (format !== 'json' && format !== 'csv') {
@@ -240,14 +179,39 @@ async function startHttpServer(store, options) {
         return;
       }
 
+      const latestAvailableDate = store.getLatestAvailableDate(ticker);
+      if (!latestAvailableDate) {
+        sendError(response, 404, `No history found for ticker ${ticker.toUpperCase()}`);
+        return;
+      }
+
       const records = store.getHistory({
         ticker,
         startDate,
         endDate,
-        limit,
         order
       });
+
+      if (records.length === 0) {
+        sendError(
+          response,
+          404,
+          startDate || endDate
+            ? `No history found for ${ticker.toUpperCase()} in the requested date range`
+            : `No history found for ${ticker.toUpperCase()}`
+        );
+        return;
+      }
+
       const serializedRecords = records.map((record) => store.serializeRecord(record));
+      const earliestReturnedDate = records.reduce(
+        (current, record) => (current === null || record.date < current ? record.date : current),
+        null
+      );
+      const latestReturnedDate = records.reduce(
+        (current, record) => (current === null || record.date > current ? record.date : current),
+        null
+      );
 
       if (format === 'csv') {
         response
@@ -258,79 +222,15 @@ async function startHttpServer(store, options) {
 
       response.json({
         ticker: ticker.toUpperCase(),
-        startDate: startDate ?? null,
-        endDate: endDate ?? null,
+        startDate: earliestReturnedDate,
+        endDate: latestReturnedDate,
+        latestAvailableDate,
         returned: records.length,
         records: serializedRecords
       });
     } catch (error) {
       sendError(response, 400, error.message);
     }
-  });
-
-  app.get('/api/eod/tickers', async (request, response) => {
-    try {
-      const prefix = request.query.prefix ? String(request.query.prefix) : undefined;
-      const limit = Math.min(parsePositiveInteger(request.query.limit, 50), 500);
-
-      response.json({
-        prefix: prefix?.toUpperCase() ?? null,
-        tickers: store.listTickers({ prefix, limit })
-      });
-    } catch (error) {
-      sendError(response, 400, error.message);
-    }
-  });
-
-  app.get('/api/eod/market-summary', async (request, response) => {
-    try {
-      const date = request.query.date ? String(request.query.date) : undefined;
-      const topN = Math.min(parsePositiveInteger(request.query.topN, 10), 50);
-      const summary = store.getMarketDaySummary(date, topN);
-
-      if (!summary) {
-        sendError(response, 404, date ? `No market data found for ${date}` : 'Dataset is empty');
-        return;
-      }
-
-      response.json(summary);
-    } catch (error) {
-      sendError(response, 400, error.message);
-    }
-  });
-
-  app.get('/documents/dataset/metadata', async (_request, response) => {
-    response.json(store.getDatasetMetadataDocument());
-  });
-
-  app.get('/documents/ticker/:ticker', async (request, response) => {
-    const document = store.getTickerDocument(request.params.ticker);
-    if (!document) {
-      response.status(404).json({ error: 'Ticker document not found' });
-      return;
-    }
-
-    response.json(document);
-  });
-
-  app.get('/documents/date/:date', async (request, response) => {
-    const document = store.getDateDocument(request.params.date);
-    if (!document) {
-      response.status(404).json({ error: 'Date document not found' });
-      return;
-    }
-
-    response.json(document);
-  });
-
-  app.get('/documents/record/:ticker/:date', async (request, response) => {
-    const document = store.getRecordDocument(request.params.ticker, request.params.date);
-    if (!document) {
-      response.status(404).json({ error: 'Record document not found' });
-      return;
-    }
-
-    response.json(document);
   });
 
   app.post('/mcp', async (request, response) => {
