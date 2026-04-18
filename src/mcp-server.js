@@ -165,9 +165,11 @@ export function createEodMcpServer(store) {
           .number()
           .int()
           .min(1)
-          .max(500)
-          .default(30)
-          .describe('Maximum number of rows to return'),
+          .max(2000)
+          .optional()
+          .describe(
+            'Maximum number of rows to return. If omitted, requests with a date range return up to 2000 rows; otherwise 30 rows.'
+          ),
         order: z
           .enum(['asc', 'desc'])
           .default('desc')
@@ -177,11 +179,12 @@ export function createEodMcpServer(store) {
     },
     async ({ ticker, startDate, endDate, limit, order }) => {
       await store.ensureLoaded();
+      const resolvedLimit = limit ?? (startDate || endDate ? 2000 : 30);
       const records = store.getHistory({
         ticker,
         startDate,
         endDate,
-        limit,
+        limit: resolvedLimit,
         order
       });
 
@@ -192,60 +195,6 @@ export function createEodMcpServer(store) {
         returned: records.length,
         records: records.map((record) => store.serializeRecord(record))
       });
-    }
-  );
-
-  server.registerTool(
-    'get_chart_package',
-    {
-      title: 'Get chart package',
-      description:
-        'Get chart-ready technical rows for a ticker with OHLCV, NBSA, and moving averages MA20, MA50, and MA200.',
-      inputSchema: {
-        ticker: z.string().trim().min(2).max(8).describe('Stock ticker, for example BBCA'),
-        startDate: z
-          .string()
-          .trim()
-          .optional()
-          .describe('Optional range start date, prefer YYYY-MM-DD'),
-        endDate: z
-          .string()
-          .trim()
-          .optional()
-          .describe('Optional range end date, prefer YYYY-MM-DD'),
-        limit: z
-          .number()
-          .int()
-          .min(1)
-          .max(2000)
-          .default(500)
-          .describe('Maximum number of rows to return'),
-        order: z
-          .enum(['asc', 'desc'])
-          .default('asc')
-          .describe('Sort order for returned rows. Use asc for charting.')
-      },
-      annotations: readOnlyAnnotations()
-    },
-    async ({ ticker, startDate, endDate, limit, order }) => {
-      await store.ensureLoaded();
-      const payload = store.getTechnicalChartData({
-        ticker,
-        startDate,
-        endDate,
-        limit,
-        order
-      });
-
-      if (payload.returned === 0) {
-        throw new Error(
-          startDate || endDate
-            ? `No chart data found for ${ticker.toUpperCase()} in the requested range`
-            : `No chart data found for ${ticker.toUpperCase()}`
-        );
-      }
-
-      return jsonText(payload);
     }
   );
 
