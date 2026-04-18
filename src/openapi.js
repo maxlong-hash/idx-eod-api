@@ -168,6 +168,80 @@ export function buildOpenApiSchema(baseUrl) {
           }
         }
       },
+      '/api/eod/chart-package': {
+        get: {
+          operationId: 'getChartPackage',
+          summary: 'Get chart-ready technical data',
+          description:
+            'Returns chart-ready rows for a ticker with OHLCV, NBSA, and moving averages MA20, MA50, and MA200.',
+          parameters: [
+            {
+              name: 'ticker',
+              in: 'query',
+              required: true,
+              schema: {
+                type: 'string'
+              },
+              description: 'Stock ticker, for example BBCA.'
+            },
+            {
+              name: 'startDate',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                format: 'date'
+              },
+              description: 'Optional start date in YYYY-MM-DD format.'
+            },
+            {
+              name: 'endDate',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                format: 'date'
+              },
+              description: 'Optional end date in YYYY-MM-DD format.'
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 2000,
+                default: 500
+              },
+              description: 'Maximum rows to return.'
+            },
+            {
+              name: 'order',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['asc', 'desc'],
+                default: 'asc'
+              },
+              description: 'Sort order. Use asc for charting.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Chart-ready technical rows.',
+              content: {
+                'application/json': {
+                  schema: {
+                    $ref: '#/components/schemas/ChartPackageResponse'
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       '/api/eod/tickers': {
         get: {
           operationId: 'listTickers',
@@ -321,6 +395,39 @@ export function buildOpenApiSchema(baseUrl) {
             }
           },
           required: ['ticker', 'startDate', 'endDate', 'returned', 'records']
+        },
+        TechnicalChartRecord: {
+          allOf: [
+            {
+              $ref: '#/components/schemas/EodRecord'
+            },
+            {
+              type: 'object',
+              properties: {
+                ma20: { type: ['number', 'null'] },
+                ma50: { type: ['number', 'null'] },
+                ma200: { type: ['number', 'null'] }
+              },
+              required: ['ma20', 'ma50', 'ma200']
+            }
+          ]
+        },
+        ChartPackageResponse: {
+          type: 'object',
+          properties: {
+            ticker: { type: 'string' },
+            startDate: { type: ['string', 'null'], format: 'date' },
+            endDate: { type: ['string', 'null'], format: 'date' },
+            latestAvailableDate: { type: ['string', 'null'], format: 'date' },
+            returned: { type: 'integer' },
+            records: {
+              type: 'array',
+              items: {
+                $ref: '#/components/schemas/TechnicalChartRecord'
+              }
+            }
+          },
+          required: ['ticker', 'startDate', 'endDate', 'latestAvailableDate', 'returned', 'records']
         },
         TickerItem: {
           type: 'object',

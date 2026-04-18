@@ -199,6 +199,43 @@ async function startHttpServer(store, options) {
     }
   });
 
+  app.get('/api/eod/chart-package', async (request, response) => {
+    try {
+      const ticker = String(request.query.ticker ?? '').trim();
+      if (!ticker) {
+        sendError(response, 400, 'ticker is required');
+        return;
+      }
+
+      const startDate = request.query.startDate ? String(request.query.startDate) : undefined;
+      const endDate = request.query.endDate ? String(request.query.endDate) : undefined;
+      const limit = Math.min(parsePositiveInteger(request.query.limit, 500), 2000);
+      const order = request.query.order === 'desc' ? 'desc' : 'asc';
+      const payload = store.getTechnicalChartData({
+        ticker,
+        startDate,
+        endDate,
+        limit,
+        order
+      });
+
+      if (payload.returned === 0) {
+        sendError(
+          response,
+          404,
+          startDate || endDate
+            ? `No chart data found for ${ticker.toUpperCase()} in the requested range`
+            : `No chart data found for ${ticker.toUpperCase()}`
+        );
+        return;
+      }
+
+      response.json(payload);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
   app.get('/api/eod/tickers', async (request, response) => {
     try {
       const prefix = request.query.prefix ? String(request.query.prefix) : undefined;

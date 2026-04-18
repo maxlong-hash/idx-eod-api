@@ -185,6 +185,38 @@ function sumBy(records, key) {
   return records.reduce((accumulator, record) => accumulator + (record[key] ?? 0), 0);
 }
 
+function computeMovingAverageSeries(records, period) {
+  const queue = [];
+  const result = [];
+  let sum = 0;
+
+  for (const record of records) {
+    const close = record.close;
+
+    if (close !== null) {
+      queue.push(close);
+      sum += close;
+    } else {
+      queue.push(null);
+    }
+
+    if (queue.length > period) {
+      const removed = queue.shift();
+      if (removed !== null) {
+        sum -= removed;
+      }
+    }
+
+    const validCount = queue.reduce(
+      (count, value) => count + (value === null ? 0 : 1),
+      0
+    );
+    result.push(queue.length === period && validCount === period ? sum / period : null);
+  }
+
+  return result;
+}
+
 function recordId(ticker, date) {
   return `record:${ticker}:${date}`;
 }
@@ -399,6 +431,72 @@ export class EodDataStore {
     }
 
     return filtered.slice(0, limit);
+  }
+
+  getTechnicalChartData({
+    ticker,
+    startDate,
+    endDate,
+    limit = 500,
+    order = 'asc'
+  }) {
+    const normalizedTicker = String(ticker).trim().toUpperCase();
+    const records = this.recordsByTicker.get(normalizedTicker);
+    if (!records || records.length === 0) {
+      return {
+        ticker: normalizedTicker,
+        startDate: startDate ?? null,
+        endDate: endDate ?? null,
+        latestAvailableDate: null,
+        returned: 0,
+        records: []
+      };
+    }
+
+    const normalizedStart = startDate ? normalizeDateInput(startDate) : null;
+    const normalizedEnd = endDate ? normalizeDateInput(endDate) : null;
+
+    if (startDate && !normalizedStart) {
+      throw new Error(`Invalid startDate: ${startDate}`);
+    }
+
+    if (endDate && !normalizedEnd) {
+      throw new Error(`Invalid endDate: ${endDate}`);
+    }
+
+    const ma20Series = computeMovingAverageSeries(records, 20);
+    const ma50Series = computeMovingAverageSeries(records, 50);
+    const ma200Series = computeMovingAverageSeries(records, 200);
+
+    let filtered = records
+      .map((record, index) => ({
+        ...this.serializeRecord(record),
+        ma20: ma20Series[index],
+        ma50: ma50Series[index],
+        ma200: ma200Series[index]
+      }))
+      .filter((record) => {
+        if (normalizedStart && record.date < normalizedStart) {
+          return false;
+        }
+        if (normalizedEnd && record.date > normalizedEnd) {
+          return false;
+        }
+        return true;
+      });
+
+    if (order === 'desc') {
+      filtered = filtered.slice().reverse();
+    }
+
+    return {
+      ticker: normalizedTicker,
+      startDate: normalizedStart,
+      endDate: normalizedEnd,
+      latestAvailableDate: records[records.length - 1]?.date ?? null,
+      returned: Math.min(filtered.length, limit),
+      records: filtered.slice(0, limit)
+    };
   }
 
   listTickers({ prefix = '', limit = 50 } = {}) {

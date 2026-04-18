@@ -11,6 +11,7 @@ MCP server ini membungkus file `EOD 2023-2026.txt` supaya data end-of-day IDX bi
   - `get_latest_available_date`
   - `get_eod_record`
   - `get_eod_history`
+  - `get_chart_package`
   - `list_tickers`
   - `get_market_day_summary`
 - Tool kompatibilitas read-only:
@@ -81,6 +82,7 @@ Environment variable yang tersedia:
 - `GET /api/eod/latest-date`
 - `GET /api/eod/record`
 - `GET /api/eod/history`
+- `GET /api/eod/chart-package`
 - `GET /api/eod/tickers`
 - `GET /api/eod/market-summary`
 - `GET /documents/dataset/metadata`
@@ -125,6 +127,7 @@ Kalau yang kamu pakai adalah layar `Add actions`, pakai jalur REST/OpenAPI, buka
    - `Ambil data EOD BBCA tanggal 2026-04-17`
    - `Tampilkan history BBRI 30 hari terakhir`
    - `Ringkas market summary tanggal 2026-04-17`
+   - `Ambil chart package BBCA dari 2025-01-01 sampai terbaru dengan MA20 MA50 MA200 dan NBSA`
 
 Kalau kamu ingin paste manual schema-nya ke kotak `Schema`, ambil isi JSON dari `/openapi.json`.
 
