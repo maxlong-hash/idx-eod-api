@@ -83,6 +83,16 @@ function serializeRecordsToCsv(records) {
   return lines.join('\n');
 }
 
+function buildHistoryDownloadUrl(baseUrl, { ticker, startDate, endDate, order }) {
+  const params = new URLSearchParams({
+    ticker,
+    startDate,
+    endDate,
+    order
+  });
+  return `${baseUrl.replace(/\/+$/, '')}/files/eod-history.csv?${params.toString()}`;
+}
+
 export function createEodMcpServer(store) {
   const server = new McpServer({
     name: 'idx-eod-history-mcp',
@@ -112,9 +122,9 @@ export function createEodMcpServer(store) {
           .default('asc')
           .describe('Sort order for returned rows. Default is asc.'),
         format: z
-          .enum(['json', 'csv'])
-          .default('json')
-          .describe('Response format. Use csv for raw export.')
+          .enum(['file_url', 'json', 'csv'])
+          .default('file_url')
+          .describe('Response format. file_url returns a downloadable CSV URL when PUBLIC_BASE_URL is configured.')
       },
       annotations: readOnlyAnnotations()
     },
@@ -152,6 +162,31 @@ export function createEodMcpServer(store) {
 
       if (format === 'csv') {
         return csvText(serializeRecordsToCsv(serializedRecords));
+      }
+
+      const downloadUrl = store.publicBaseUrl
+        ? buildHistoryDownloadUrl(store.publicBaseUrl, {
+            ticker: ticker.toUpperCase(),
+            startDate: earliestReturnedDate,
+            endDate: latestReturnedDate,
+            order
+          })
+        : null;
+
+      if (format === 'file_url') {
+        if (!downloadUrl) {
+          throw new Error('PUBLIC_BASE_URL is required for format=file_url');
+        }
+
+        return jsonText({
+          ticker: ticker.toUpperCase(),
+          startDate: earliestReturnedDate,
+          endDate: latestReturnedDate,
+          latestAvailableDate,
+          returned: records.length,
+          downloadUrl,
+          openaiFileResponse: [downloadUrl]
+        });
       }
 
       return jsonText({

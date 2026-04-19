@@ -96,6 +96,20 @@ function serializeRecordsToCsv(records) {
   return lines.join('\n');
 }
 
+function buildHistoryFilename(ticker, startDate, endDate) {
+  return `${ticker}_${startDate}_${endDate}.csv`;
+}
+
+function buildHistoryDownloadUrl(baseUrl, { ticker, startDate, endDate, order }) {
+  const params = new URLSearchParams({
+    ticker,
+    startDate,
+    endDate,
+    order
+  });
+  return `${baseUrl}/files/eod-history.csv?${params.toString()}`;
+}
+
 async function startStdioServer(store) {
   const server = createEodMcpServer(store);
   const transport = new StdioServerTransport();
@@ -161,6 +175,53 @@ async function startHttpServer(store, options) {
     response.json(buildOpenApiSchema(baseUrl));
   });
 
+  app.get('/files/eod-history.csv', async (request, response) => {
+    try {
+      const ticker = String(request.query.ticker ?? '').trim();
+      if (!ticker) {
+        sendError(response, 400, 'ticker is required');
+        return;
+      }
+
+      const latestAvailableDate = store.getLatestAvailableDate(ticker);
+      if (!latestAvailableDate) {
+        sendError(response, 404, `No history found for ticker ${ticker.toUpperCase()}`);
+        return;
+      }
+
+      const requestedStartDate = request.query.startDate ? String(request.query.startDate) : undefined;
+      const requestedEndDate = request.query.endDate ? String(request.query.endDate) : undefined;
+      const order = request.query.order === 'desc' ? 'desc' : 'asc';
+      const records = store.getHistory({
+        ticker,
+        startDate: requestedStartDate,
+        endDate: requestedEndDate,
+        order
+      });
+
+      if (records.length === 0) {
+        sendError(
+          response,
+          404,
+          requestedStartDate || requestedEndDate
+            ? `No history found for ${ticker.toUpperCase()} in the requested date range`
+            : `No history found for ${ticker.toUpperCase()}`
+        );
+        return;
+      }
+
+      const serializedRecords = records.map((record) => store.serializeRecord(record));
+      const startDate = serializedRecords[0]?.date ?? latestAvailableDate;
+      const endDate = serializedRecords[serializedRecords.length - 1]?.date ?? latestAvailableDate;
+      const fileName = buildHistoryFilename(ticker.toUpperCase(), startDate, endDate);
+
+      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      response.type('text/csv; charset=utf-8').send(serializeRecordsToCsv(serializedRecords));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
   app.get('/api/eod/history', async (request, response) => {
     try {
       const ticker = String(request.query.ticker ?? '').trim();
@@ -172,13 +233,14 @@ async function startHttpServer(store, options) {
       const startDate = request.query.startDate ? String(request.query.startDate) : undefined;
       const endDate = request.query.endDate ? String(request.query.endDate) : undefined;
       const order = request.query.order === 'desc' ? 'desc' : 'asc';
-      const format = String(request.query.format ?? 'json').trim().toLowerCase();
+      const format = String(request.query.format ?? 'file_url').trim().toLowerCase();
 
-      if (format !== 'json' && format !== 'csv') {
-        sendError(response, 400, 'format must be either json or csv');
+      if (format !== 'json' && format !== 'csv' && format !== 'file_url') {
+        sendError(response, 400, 'format must be one of json, csv, or file_url');
         return;
       }
 
+      const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
       const latestAvailableDate = store.getLatestAvailableDate(ticker);
       if (!latestAvailableDate) {
         sendError(response, 404, `No history found for ticker ${ticker.toUpperCase()}`);
@@ -217,6 +279,26 @@ async function startHttpServer(store, options) {
         response
           .type('text/csv; charset=utf-8')
           .send(serializeRecordsToCsv(serializedRecords));
+        return;
+      }
+
+      const downloadUrl = buildHistoryDownloadUrl(baseUrl, {
+        ticker: ticker.toUpperCase(),
+        startDate: earliestReturnedDate,
+        endDate: latestReturnedDate,
+        order
+      });
+
+      if (format === 'file_url') {
+        response.json({
+          ticker: ticker.toUpperCase(),
+          startDate: earliestReturnedDate,
+          endDate: latestReturnedDate,
+          latestAvailableDate,
+          returned: records.length,
+          downloadUrl,
+          openaiFileResponse: [downloadUrl]
+        });
         return;
       }
 

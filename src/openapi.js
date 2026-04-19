@@ -30,7 +30,7 @@ export function buildOpenApiSchema(baseUrl) {
           operationId: 'getEodHistory',
           summary: 'Get full raw EOD history',
           description:
-            'Returns full raw EOD history for a ticker. If no dates are provided, the API returns the full available range from the earliest stored date through the latest available date. Use format=csv for CSV output that matches the source dataset columns.',
+            'Returns full raw EOD history for a ticker. If no dates are provided, the API returns the full available range from the earliest stored date through the latest available date. Default format is file_url so ChatGPT can fetch the CSV as a file. Use format=json for inline JSON or format=csv for inline CSV.',
           parameters: [
             {
               name: 'ticker',
@@ -78,10 +78,10 @@ export function buildOpenApiSchema(baseUrl) {
               required: false,
               schema: {
                 type: 'string',
-                enum: ['json', 'csv'],
-                default: 'json'
+                enum: ['file_url', 'json', 'csv'],
+                default: 'file_url'
               },
-              description: 'Response format. Use csv for raw export.'
+              description: 'Response format. file_url returns a downloadable CSV file URL in openaiFileResponse.'
             }
           ],
           responses: {
@@ -90,7 +90,14 @@ export function buildOpenApiSchema(baseUrl) {
               content: {
                 'application/json': {
                   schema: {
-                    $ref: '#/components/schemas/EodHistoryResponse'
+                    oneOf: [
+                      {
+                        $ref: '#/components/schemas/EodHistoryResponse'
+                      },
+                      {
+                        $ref: '#/components/schemas/EodHistoryFileResponse'
+                      }
+                    ]
                   }
                 },
                 'text/csv': {
@@ -159,6 +166,33 @@ export function buildOpenApiSchema(baseUrl) {
             }
           },
           required: ['ticker', 'startDate', 'endDate', 'latestAvailableDate', 'returned', 'records']
+        },
+        EodHistoryFileResponse: {
+          type: 'object',
+          properties: {
+            ticker: { type: 'string' },
+            startDate: { type: ['string', 'null'], format: 'date' },
+            endDate: { type: ['string', 'null'], format: 'date' },
+            latestAvailableDate: { type: ['string', 'null'], format: 'date' },
+            returned: { type: 'integer' },
+            downloadUrl: { type: 'string', format: 'uri' },
+            openaiFileResponse: {
+              type: 'array',
+              items: {
+                type: 'string',
+                format: 'uri'
+              }
+            }
+          },
+          required: [
+            'ticker',
+            'startDate',
+            'endDate',
+            'latestAvailableDate',
+            'returned',
+            'downloadUrl',
+            'openaiFileResponse'
+          ]
         }
       }
     }

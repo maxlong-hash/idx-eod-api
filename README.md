@@ -79,12 +79,13 @@ Parameter:
 - `startDate` opsional
 - `endDate` opsional
 - `order` opsional: `asc` atau `desc`, default `asc`
-- `format` opsional: `json` atau `csv`, default `json`
+- `format` opsional: `file_url`, `json`, atau `csv`, default `file_url`
 
 Perilaku:
 
 - jika `startDate` dan `endDate` tidak diisi, server mengembalikan **full history** dari tanggal paling awal yang tersedia sampai tanggal terbaru yang tersedia
 - jika tanggal diisi, server mengembalikan **full history** dalam range itu
+- default `file_url` mengembalikan URL file CSV melalui `openaiFileResponse`, paling cocok untuk ChatGPT Actions
 
 ## Contoh JSON
 
@@ -97,13 +98,35 @@ Full history:
 Custom range:
 
 ```text
-/api/eod/history?ticker=BBCA&startDate=2025-01-01&endDate=2026-04-17&order=asc
+/api/eod/history?ticker=BBCA&startDate=2025-01-01&endDate=2026-04-17&order=asc&format=json
 ```
 
 ## Contoh CSV
 
 ```text
 /api/eod/history?ticker=BBCA&startDate=2023-01-01&endDate=2026-04-17&order=asc&format=csv
+```
+
+## Contoh File URL untuk ChatGPT
+
+```text
+/api/eod/history?ticker=BBCA
+```
+
+Respons JSON kecil:
+
+```json
+{
+  "ticker": "BBCA",
+  "startDate": "2023-01-02",
+  "endDate": "2026-04-17",
+  "latestAvailableDate": "2026-04-17",
+  "returned": 772,
+  "downloadUrl": "https://eod.maxlong.my.id/files/eod-history.csv?...",
+  "openaiFileResponse": [
+    "https://eod.maxlong.my.id/files/eod-history.csv?..."
+  ]
+}
 ```
 
 Header CSV mengikuti file sumber:
