@@ -30,7 +30,7 @@ export function buildOpenApiSchema(baseUrl) {
           operationId: 'getEodHistory',
           summary: 'Get full raw EOD history',
           description:
-            'Returns full raw EOD history for a ticker. If no dates are provided, the API returns the full available range from the earliest stored date through the latest available date. Default format is file_url so ChatGPT can fetch the CSV as a file. Use format=json for inline JSON or format=csv for inline CSV.',
+            'Returns full raw EOD history for a ticker. If no dates are provided, the API returns the full available range. Default format is file_url so ChatGPT can fetch the CSV as a file. Use format=json for inline JSON or format=csv for inline CSV.',
           parameters: [
             {
               name: 'ticker',
