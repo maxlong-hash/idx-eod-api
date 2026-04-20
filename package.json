@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js --transport=http",
     "start:http": "node src/index.js --transport=http",
-    "start:stdio": "node src/index.js --transport=stdio"
+    "start:stdio": "node src/index.js --transport=stdio",
+    "eod:update": "node scripts/apply-eod-update.js"
   },
   "keywords": [
     "mcp",

@@ -166,3 +166,32 @@ Di VPS:
 git pull origin main
 sudo docker compose -f docker-compose.vps.yml up -d --build
 ```
+
+## Update dataset dengan file lanjutan
+
+Kalau ada file lanjutan baru, misalnya `fms260420.txt`, jalankan:
+
+```bash
+npm run eod:update -- fms260420.txt
+```
+
+Script ini akan:
+
+- membaca file update
+- skip header
+- mendeteksi duplikat berdasarkan kombinasi `date + ticker`
+- append hanya baris baru ke `EOD 2023-2026.txt`
+
+Setelah update, cek cepat:
+
+```bash
+npm run start:http
+```
+
+atau baca statistik dengan script internal/server health untuk memastikan `latestDate` sudah naik.
+
+Kalau server berjalan di VPS, setelah dataset utama diperbarui lakukan rebuild:
+
+```bash
+sudo docker compose -f docker-compose.vps.yml up -d --build
+```
