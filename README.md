@@ -63,6 +63,7 @@ Environment variable:
 - `GET /openapi.json`
 - `GET /privacy`
 - `GET /api/eod/history`
+- `GET /api/eod/ihsg`
 - `POST /mcp`
 
 ## Cara kerja endpoint history
@@ -87,6 +88,19 @@ Perilaku:
 - jika tanggal diisi, server mengembalikan **full history** dalam range itu
 - default `file_url` mengembalikan URL file CSV melalui `openaiFileResponse`, paling cocok untuk ChatGPT Actions
 
+Untuk IHSG, bisa pakai endpoint khusus tanpa parameter ticker:
+
+```text
+GET /api/eod/ihsg
+```
+
+Parameter yang tersedia sama, kecuali `ticker` tidak perlu diisi:
+
+- `startDate` opsional
+- `endDate` opsional
+- `order` opsional: `asc` atau `desc`, default `asc`
+- `format` opsional: `file_url`, `json`, atau `csv`, default `file_url`
+
 ## Contoh JSON
 
 Full history:
@@ -99,6 +113,12 @@ Custom range:
 
 ```text
 /api/eod/history?ticker=BBCA&startDate=2025-01-01&endDate=2026-04-17&order=asc&format=json
+```
+
+IHSG:
+
+```text
+/api/eod/ihsg?startDate=2023-01-01&endDate=2026-04-24
 ```
 
 ## Contoh CSV

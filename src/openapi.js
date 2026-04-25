@@ -30,7 +30,7 @@ export function buildOpenApiSchema(baseUrl) {
           operationId: 'getEodHistory',
           summary: 'Get full raw EOD history',
           description:
-            'Returns full raw EOD history for a ticker. If no dates are provided, the API returns the full available range. Default format is file_url so ChatGPT can fetch the CSV as a file. Use format=json for inline JSON or format=csv for inline CSV.',
+            'Returns raw EOD history for one ticker. Default format=file_url returns a CSV file URL. Use format=json or format=csv for inline data.',
           parameters: [
             {
               name: 'ticker',
@@ -87,6 +87,82 @@ export function buildOpenApiSchema(baseUrl) {
           responses: {
             '200': {
               description: 'Raw EOD history.',
+              content: {
+                'application/json': {
+                  schema: {
+                    oneOf: [
+                      {
+                        $ref: '#/components/schemas/EodHistoryResponse'
+                      },
+                      {
+                        $ref: '#/components/schemas/EodHistoryFileResponse'
+                      }
+                    ]
+                  }
+                },
+                'text/csv': {
+                  schema: {
+                    type: 'string'
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/eod/ihsg': {
+        get: {
+          operationId: 'getIhsgHistory',
+          summary: 'Get raw IHSG EOD history',
+          description:
+            'Returns raw IHSG index EOD history. Default format=file_url returns a CSV file URL. Use optional dates for a custom range.',
+          parameters: [
+            {
+              name: 'startDate',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                format: 'date'
+              },
+              description: 'Optional custom start date in YYYY-MM-DD format.'
+            },
+            {
+              name: 'endDate',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                format: 'date'
+              },
+              description: 'Optional custom end date in YYYY-MM-DD format.'
+            },
+            {
+              name: 'order',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['asc', 'desc'],
+                default: 'asc'
+              },
+              description: 'Sort order for returned rows. Default is asc.'
+            },
+            {
+              name: 'format',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['file_url', 'json', 'csv'],
+                default: 'file_url'
+              },
+              description: 'Response format. file_url returns a downloadable CSV file URL in openaiFileResponse.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Raw IHSG EOD history.',
               content: {
                 'application/json': {
                   schema: {

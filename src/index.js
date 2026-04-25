@@ -139,6 +139,7 @@ async function startHttpServer(store, options) {
       openApiEndpoint: '/openapi.json',
       privacyPolicyEndpoint: '/privacy',
       historyEndpoint: '/api/eod/history',
+      ihsgEndpoint: '/api/eod/ihsg',
       stats: store.getStats()
     });
   });
@@ -222,9 +223,9 @@ async function startHttpServer(store, options) {
     }
   });
 
-  app.get('/api/eod/history', async (request, response) => {
+  const sendHistoryResponse = async (request, response, fixedTicker = null) => {
     try {
-      const ticker = String(request.query.ticker ?? '').trim();
+      const ticker = fixedTicker ?? String(request.query.ticker ?? '').trim();
       if (!ticker) {
         sendError(response, 400, 'ticker is required');
         return;
@@ -313,6 +314,14 @@ async function startHttpServer(store, options) {
     } catch (error) {
       sendError(response, 400, error.message);
     }
+  };
+
+  app.get('/api/eod/history', async (request, response) => {
+    await sendHistoryResponse(request, response);
+  });
+
+  app.get('/api/eod/ihsg', async (request, response) => {
+    await sendHistoryResponse(request, response, 'IHSG');
   });
 
   app.post('/mcp', async (request, response) => {
