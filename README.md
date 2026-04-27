@@ -202,6 +202,14 @@ Script ini akan:
 - mendeteksi duplikat berdasarkan kombinasi `date + ticker`
 - append hanya baris baru ke `EOD 2023-2026.txt`
 
+Kalau file update berisi koreksi untuk baris lama, gunakan:
+
+```bash
+node scripts/apply-eod-update.js fms260427.txt IHSG20260427.txt --replace-existing
+```
+
+Dengan opsi ini, baris lama yang key `date + ticker`-nya sama akan diganti jika isi datanya berbeda.
+
 Setelah update, cek cepat:
 
 ```bash

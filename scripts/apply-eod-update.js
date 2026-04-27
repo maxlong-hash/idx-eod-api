@@ -36,8 +36,12 @@ function buildKey(parts) {
   return `${date}|${ticker}`;
 }
 
-async function collectExistingKeys(targetPath) {
-  const keys = new Set();
+function hasFlag(flagName) {
+  return process.argv.includes(flagName);
+}
+
+async function collectExistingRows(targetPath) {
+  const rows = new Map();
   const stream = fs.createReadStream(targetPath, { encoding: 'utf8' });
   const reader = readline.createInterface({
     input: stream,
@@ -64,16 +68,17 @@ async function collectExistingKeys(targetPath) {
 
     const key = buildKey(parts);
     if (key) {
-      keys.add(key);
+      rows.set(key, trimmed);
     }
   }
 
-  return keys;
+  return rows;
 }
 
-async function collectNewLines(updatePath, existingKeys) {
+async function collectUpdates(updatePath, existingRows, replaceExisting) {
   const newLines = [];
   const duplicateKeys = [];
+  const replacements = new Map();
   const stream = fs.createReadStream(updatePath, { encoding: 'utf8' });
   const reader = readline.createInterface({
     input: stream,
@@ -103,23 +108,54 @@ async function collectNewLines(updatePath, existingKeys) {
       continue;
     }
 
-    if (existingKeys.has(key)) {
+    const existingLine = existingRows.get(key);
+    if (existingLine) {
+      if (replaceExisting && existingLine !== trimmed) {
+        replacements.set(key, trimmed);
+        existingRows.set(key, trimmed);
+      }
       duplicateKeys.push(key);
       continue;
     }
 
-    existingKeys.add(key);
+    existingRows.set(key, trimmed);
     newLines.push(trimmed);
   }
 
   return {
     newLines,
-    duplicateKeys
+    duplicateKeys,
+    replacements
   };
+}
+
+function applyReplacements(targetPath, replacements) {
+  if (replacements.size === 0) {
+    return;
+  }
+
+  const lines = fs.readFileSync(targetPath, 'utf8').split(/\r?\n/);
+  const updatedLines = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('<date>')) {
+      return line;
+    }
+
+    const parts = trimmed.split(',');
+    if (parts.length < 10) {
+      return line;
+    }
+
+    const key = buildKey(parts);
+    return key && replacements.has(key) ? replacements.get(key) : line;
+  });
+
+  fs.writeFileSync(targetPath, updatedLines.join('\n'), 'utf8');
 }
 
 async function main() {
   const targetArg = resolveArgValue('--target');
+  const replaceExisting = hasFlag('--replace-existing');
   const positionalArgs = process.argv.slice(2).filter((arg) => !arg.startsWith('--'));
   const updateFiles = positionalArgs.length > 0 ? positionalArgs : ['fms260420.txt'];
   const targetPath = path.resolve(targetArg ?? path.join(process.cwd(), 'EOD 2023-2026.txt'));
@@ -135,22 +171,31 @@ async function main() {
     }
   }
 
-  const existingKeys = await collectExistingKeys(targetPath);
+  const existingRows = await collectExistingRows(targetPath);
   const appendChunks = [];
+  const replacements = new Map();
   const summary = [];
 
   for (const updatePath of resolvedUpdateFiles) {
-    const { newLines, duplicateKeys } = await collectNewLines(updatePath, existingKeys);
+    const result = await collectUpdates(updatePath, existingRows, replaceExisting);
+    const { newLines, duplicateKeys } = result;
     if (newLines.length > 0) {
       appendChunks.push(newLines.join('\n'));
+    }
+
+    for (const [key, line] of result.replacements.entries()) {
+      replacements.set(key, line);
     }
 
     summary.push({
       file: path.basename(updatePath),
       appended: newLines.length,
-      duplicatesSkipped: duplicateKeys.length
+      duplicatesSkipped: duplicateKeys.length,
+      replaced: result.replacements.size
     });
   }
+
+  applyReplacements(targetPath, replacements);
 
   if (appendChunks.length > 0) {
     const prefix = fs.statSync(targetPath).size > 0 ? '\n' : '';
@@ -162,7 +207,8 @@ async function main() {
       {
         target: targetPath,
         files: summary,
-        totalAppended: summary.reduce((sum, item) => sum + item.appended, 0)
+        totalAppended: summary.reduce((sum, item) => sum + item.appended, 0),
+        totalReplaced: summary.reduce((sum, item) => sum + item.replaced, 0)
       },
       null,
       2
