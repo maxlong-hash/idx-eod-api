@@ -52,6 +52,7 @@ npm run start:stdio
 Environment variable:
 
 - `EOD_FILE_PATH`
+- `OWNERSHIP_DATA_DIR`
 - `HOST`
 - `PORT`
 - `PUBLIC_BASE_URL`
@@ -64,6 +65,9 @@ Environment variable:
 - `GET /privacy`
 - `GET /api/eod/history`
 - `GET /api/eod/ihsg`
+- `GET /api/ownership/holders`
+- `GET /api/ownership/history`
+- `GET /api/ownership/compare`
 - `POST /mcp`
 
 ## Cara kerja endpoint history
@@ -161,6 +165,51 @@ Header CSV mengikuti file sumber:
 - `<freq>`
 - `<valuasi>`
 - `<nbsa>`
+
+## Endpoint ownership
+
+Data ownership membaca folder:
+
+```text
+./data/ownership
+```
+
+Isi awalnya:
+
+- `db_balance_history.js` untuk histori bulanan lokal/asing per ticker
+- `data_31_maret_2026.js` untuk daftar pemegang saham per 31 Maret 2026
+
+Ambil pemegang saham terbaru atau periode tertentu:
+
+```text
+/api/ownership/holders?ticker=PGAS&period=2026-03&limit=10
+```
+
+Ambil histori kepemilikan bulanan:
+
+```text
+/api/ownership/history?ticker=PGAS&startDate=2026-02&endDate=2026-03
+```
+
+Bandingkan metric antar periode:
+
+```text
+/api/ownership/compare?ticker=PGAS&from=2026-02&to=2026-03&metric=local_total
+```
+
+Metric yang umum:
+
+- `local_total`
+- `foreign_total`
+- `price`
+- `local_is`, `local_cp`, `local_pf`, `local_ib`, `local_id`, `local_mf`, `local_sc`, `local_fd`, `local_ot`
+- `foreign_is`, `foreign_cp`, `foreign_pf`, `foreign_ib`, `foreign_id`, `foreign_mf`, `foreign_sc`, `foreign_fd`, `foreign_ot`
+
+Endpoint `holders` dan `history` mendukung:
+
+- `format=file_url` default untuk Custom GPT
+- `format=json` untuk data inline
+- `format=csv` untuk CSV inline
 
 ## Custom GPT Actions
 

@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { EodDataStore } from './eod-store.js';
 import { createEodMcpServer } from './mcp-server.js';
 import { buildOpenApiSchema, getRequestBaseUrl } from './openapi.js';
+import { OwnershipDataStore } from './ownership-store.js';
 
 function getArgValue(flagName) {
   const direct = process.argv.find((arg) => arg.startsWith(`${flagName}=`));
@@ -29,13 +30,17 @@ function resolveOptions() {
   const filePath = process.env.EOD_FILE_PATH
     ? path.resolve(process.env.EOD_FILE_PATH)
     : path.resolve(process.cwd(), 'EOD 2023-2026.txt');
+  const ownershipDataDir = process.env.OWNERSHIP_DATA_DIR
+    ? path.resolve(process.env.OWNERSHIP_DATA_DIR)
+    : path.resolve(process.cwd(), 'data', 'ownership');
 
   return {
     transport,
     port,
     host,
     publicBaseUrl,
-    filePath
+    filePath,
+    ownershipDataDir
   };
 }
 
@@ -110,6 +115,20 @@ function buildHistoryDownloadUrl(baseUrl, { ticker, startDate, endDate, order })
   return `${baseUrl}/files/eod-history.csv?${params.toString()}`;
 }
 
+function addOptionalParam(params, name, value) {
+  if (value !== undefined && value !== null && value !== '') {
+    params.set(name, String(value));
+  }
+}
+
+function buildOwnershipDownloadUrl(baseUrl, fileName, query) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    addOptionalParam(params, key, value);
+  }
+  return `${baseUrl}/files/${fileName}.csv?${params.toString()}`;
+}
+
 async function startStdioServer(store) {
   const server = createEodMcpServer(store);
   const transport = new StdioServerTransport();
@@ -127,7 +146,7 @@ async function startStdioServer(store) {
   process.on('SIGTERM', shutdown);
 }
 
-async function startHttpServer(store, options) {
+async function startHttpServer(store, ownershipStore, options) {
   const app = createMcpExpressApp({ host: options.host });
 
   app.get('/', async (_request, response) => {
@@ -140,14 +159,21 @@ async function startHttpServer(store, options) {
       privacyPolicyEndpoint: '/privacy',
       historyEndpoint: '/api/eod/history',
       ihsgEndpoint: '/api/eod/ihsg',
-      stats: store.getStats()
+      ownershipEndpoints: {
+        holders: '/api/ownership/holders',
+        history: '/api/ownership/history',
+        compare: '/api/ownership/compare'
+      },
+      stats: store.getStats(),
+      ownershipStats: ownershipStore.getStats()
     });
   });
 
   app.get('/health', async (_request, response) => {
     response.json({
       status: 'ok',
-      stats: store.getStats()
+      stats: store.getStats(),
+      ownershipStats: ownershipStore.getStats()
     });
   });
 
@@ -218,6 +244,53 @@ async function startHttpServer(store, options) {
 
       response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       response.type('text/csv; charset=utf-8').send(serializeRecordsToCsv(serializedRecords));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/files/ownership-holders.csv', async (request, response) => {
+    try {
+      const result = ownershipStore.getHolders({
+        ticker: request.query.ticker,
+        period: request.query.period,
+        investorType: request.query.investorType,
+        localForeign: request.query.localForeign,
+        minPercentage: request.query.minPercentage,
+        limit: request.query.limit,
+        sort: request.query.sort
+      });
+
+      if (result.records.length === 0) {
+        sendError(response, 404, `No ownership holders found for ticker ${result.ticker}`);
+        return;
+      }
+
+      const fileName = `${result.ticker}_ownership_holders_${result.period}.csv`;
+      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      response.type('text/csv; charset=utf-8').send(ownershipStore.serializeHoldersToCsv(result.records));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/files/ownership-history.csv', async (request, response) => {
+    try {
+      const result = ownershipStore.getHistory({
+        ticker: request.query.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate,
+        order: request.query.order === 'desc' ? 'desc' : 'asc'
+      });
+
+      if (result.records.length === 0) {
+        sendError(response, 404, `No ownership history found for ticker ${result.ticker}`);
+        return;
+      }
+
+      const fileName = `${result.ticker}_ownership_history_${result.startDate}_${result.endDate}.csv`;
+      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      response.type('text/csv; charset=utf-8').send(ownershipStore.serializeHistoryToCsv(result.records));
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -324,6 +397,130 @@ async function startHttpServer(store, options) {
     await sendHistoryResponse(request, response, 'IHSG');
   });
 
+  app.get('/api/ownership/holders', async (request, response) => {
+    try {
+      const format = String(request.query.format ?? 'file_url').trim().toLowerCase();
+      if (format !== 'json' && format !== 'csv' && format !== 'file_url') {
+        sendError(response, 400, 'format must be one of json, csv, or file_url');
+        return;
+      }
+
+      const result = ownershipStore.getHolders({
+        ticker: request.query.ticker,
+        period: request.query.period,
+        investorType: request.query.investorType,
+        localForeign: request.query.localForeign,
+        minPercentage: request.query.minPercentage,
+        limit: request.query.limit,
+        sort: request.query.sort
+      });
+
+      if (result.records.length === 0) {
+        sendError(response, 404, `No ownership holders found for ticker ${result.ticker}`);
+        return;
+      }
+
+      if (format === 'csv') {
+        response.type('text/csv; charset=utf-8').send(ownershipStore.serializeHoldersToCsv(result.records));
+        return;
+      }
+
+      const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
+      const downloadUrl = buildOwnershipDownloadUrl(baseUrl, 'ownership-holders', {
+        ticker: result.ticker,
+        period: result.period,
+        investorType: request.query.investorType,
+        localForeign: request.query.localForeign,
+        minPercentage: request.query.minPercentage,
+        limit: request.query.limit,
+        sort: request.query.sort
+      });
+
+      if (format === 'file_url') {
+        response.json({
+          ticker: result.ticker,
+          period: result.period,
+          date: result.date,
+          returned: result.returned,
+          downloadUrl,
+          openaiFileResponse: [downloadUrl]
+        });
+        return;
+      }
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/ownership/history', async (request, response) => {
+    try {
+      const format = String(request.query.format ?? 'file_url').trim().toLowerCase();
+      if (format !== 'json' && format !== 'csv' && format !== 'file_url') {
+        sendError(response, 400, 'format must be one of json, csv, or file_url');
+        return;
+      }
+
+      const order = request.query.order === 'desc' ? 'desc' : 'asc';
+      const result = ownershipStore.getHistory({
+        ticker: request.query.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate,
+        order
+      });
+
+      if (result.records.length === 0) {
+        sendError(response, 404, `No ownership history found for ticker ${result.ticker}`);
+        return;
+      }
+
+      if (format === 'csv') {
+        response.type('text/csv; charset=utf-8').send(ownershipStore.serializeHistoryToCsv(result.records));
+        return;
+      }
+
+      const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
+      const downloadUrl = buildOwnershipDownloadUrl(baseUrl, 'ownership-history', {
+        ticker: result.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate,
+        order
+      });
+
+      if (format === 'file_url') {
+        response.json({
+          ticker: result.ticker,
+          startDate: result.startDate,
+          endDate: result.endDate,
+          returned: result.returned,
+          downloadUrl,
+          openaiFileResponse: [downloadUrl]
+        });
+        return;
+      }
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/ownership/compare', async (request, response) => {
+    try {
+      const result = ownershipStore.compare({
+        ticker: request.query.ticker,
+        from: request.query.from,
+        to: request.query.to,
+        metric: request.query.metric
+      });
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
   app.post('/mcp', async (request, response) => {
     const server = createEodMcpServer(store);
 
@@ -390,8 +587,12 @@ async function main() {
     filePath: options.filePath,
     publicBaseUrl: options.publicBaseUrl
   });
+  const ownershipStore = new OwnershipDataStore({
+    dataDir: options.ownershipDataDir
+  });
 
   await store.ensureLoaded();
+  await ownershipStore.ensureLoaded();
 
   if (options.transport === 'stdio') {
     await startStdioServer(store);
@@ -399,7 +600,7 @@ async function main() {
   }
 
   if (options.transport === 'http') {
-    await startHttpServer(store, options);
+    await startHttpServer(store, ownershipStore, options);
     return;
   }
 
