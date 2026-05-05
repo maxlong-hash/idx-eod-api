@@ -396,6 +396,240 @@ export function buildOpenApiSchema(baseUrl) {
             }
           }
         }
+      },
+      '/api/ownership/investor-holdings': {
+        get: {
+          operationId: 'getOwnershipInvestorHoldings',
+          summary: 'Get holder stock list',
+          description:
+            'Returns stocks held by one ownership holder in a period. Example holder=PANIN.',
+          parameters: [
+            {
+              name: 'holder',
+              in: 'query',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Holder or investor name search text.'
+            },
+            {
+              name: 'period',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Period YYYY-MM. Defaults to latest snapshot.'
+            },
+            {
+              name: 'ticker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional ticker filter.'
+            },
+            {
+              name: 'minPercentage',
+              in: 'query',
+              required: false,
+              schema: { type: 'number' },
+              description: 'Optional minimum ownership percentage.'
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 100, minimum: 1, maximum: 2000 },
+              description: 'Maximum rows.'
+            },
+            {
+              name: 'sort',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['percentage_desc', 'shares_desc', 'ticker_asc'],
+                default: 'percentage_desc'
+              },
+              description: 'Sort order.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Holder stock list.',
+              content: {
+                'application/json': {
+                  schema: { type: 'object', additionalProperties: true }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/ownership/holder-compare': {
+        get: {
+          operationId: 'compareOwnershipHolder',
+          summary: 'Compare holder in a stock',
+          description:
+            'Compares one holder in one ticker between two periods. Use for accumulation or distribution.',
+          parameters: [
+            {
+              name: 'ticker',
+              in: 'query',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Stock ticker, for example PGAS.'
+            },
+            {
+              name: 'holder',
+              in: 'query',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Holder search text, for example PANIN.'
+            },
+            {
+              name: 'from',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Start period YYYY-MM. Defaults to previous snapshot.'
+            },
+            {
+              name: 'to',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'End period YYYY-MM. Defaults to latest snapshot.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Holder comparison.',
+              content: {
+                'application/json': {
+                  schema: { type: 'object', additionalProperties: true }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/ownership/investor-compare': {
+        get: {
+          operationId: 'compareOwnershipInvestor',
+          summary: 'Compare holder portfolio',
+          description:
+            'Compares all stocks held by one holder between two periods.',
+          parameters: [
+            {
+              name: 'holder',
+              in: 'query',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Holder search text, for example PANIN.'
+            },
+            {
+              name: 'from',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Start period YYYY-MM. Defaults to previous snapshot.'
+            },
+            {
+              name: 'to',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'End period YYYY-MM. Defaults to latest snapshot.'
+            },
+            {
+              name: 'ticker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional ticker filter.'
+            },
+            {
+              name: 'status',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['new', 'removed', 'increased', 'decreased', 'scripless_shift', 'script_shift', 'rebalanced', 'unchanged']
+              },
+              description: 'Optional change status filter.'
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 100, minimum: 1, maximum: 1000 },
+              description: 'Maximum rows.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Holder portfolio comparison.',
+              content: {
+                'application/json': {
+                  schema: { type: 'object', additionalProperties: true }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/api/ownership/network': {
+        get: {
+          operationId: 'getOwnershipNetwork',
+          summary: 'Get ownership network',
+          description:
+            'Returns nodes and links for stock-to-holder or holder-to-stock ownership network.',
+          parameters: [
+            {
+              name: 'ticker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Ticker root, for example PGAS.'
+            },
+            {
+              name: 'holder',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Holder root if ticker is not provided.'
+            },
+            {
+              name: 'period',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Period YYYY-MM. Defaults to latest snapshot.'
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 10, minimum: 1, maximum: 50 },
+              description: 'Primary node limit.'
+            },
+            {
+              name: 'neighborLimit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 5, minimum: 0, maximum: 25 },
+              description: 'Neighbor node limit per primary node.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Ownership graph nodes and links.',
+              content: {
+                'application/json': {
+                  schema: { type: 'object', additionalProperties: true }
+                }
+              }
+            }
+          }
+        }
       }
     },
     components: {

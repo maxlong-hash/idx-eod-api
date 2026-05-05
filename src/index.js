@@ -162,7 +162,11 @@ async function startHttpServer(store, ownershipStore, options) {
       ownershipEndpoints: {
         holders: '/api/ownership/holders',
         history: '/api/ownership/history',
-        compare: '/api/ownership/compare'
+        compare: '/api/ownership/compare',
+        investorHoldings: '/api/ownership/investor-holdings',
+        holderCompare: '/api/ownership/holder-compare',
+        investorCompare: '/api/ownership/investor-compare',
+        network: '/api/ownership/network'
       },
       stats: store.getStats(),
       ownershipStats: ownershipStore.getStats()
@@ -513,6 +517,81 @@ async function startHttpServer(store, ownershipStore, options) {
         from: request.query.from,
         to: request.query.to,
         metric: request.query.metric
+      });
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/ownership/investor-holdings', async (request, response) => {
+    try {
+      const result = ownershipStore.getInvestorHoldings({
+        holder: request.query.holder,
+        period: request.query.period,
+        ticker: request.query.ticker,
+        minPercentage: request.query.minPercentage,
+        limit: request.query.limit,
+        sort: request.query.sort
+      });
+
+      if (result.records.length === 0) {
+        sendError(response, 404, `No ownership holdings found for holder ${request.query.holder ?? ''}`);
+        return;
+      }
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/ownership/holder-compare', async (request, response) => {
+    try {
+      const result = ownershipStore.compareHolder({
+        ticker: request.query.ticker,
+        holder: request.query.holder,
+        from: request.query.from,
+        to: request.query.to
+      });
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/ownership/investor-compare', async (request, response) => {
+    try {
+      const result = ownershipStore.compareInvestor({
+        holder: request.query.holder,
+        from: request.query.from,
+        to: request.query.to,
+        ticker: request.query.ticker,
+        status: request.query.status,
+        limit: request.query.limit
+      });
+
+      if (result.records.length === 0) {
+        sendError(response, 404, `No ownership comparison found for holder ${request.query.holder ?? ''}`);
+        return;
+      }
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/ownership/network', async (request, response) => {
+    try {
+      const result = ownershipStore.getNetwork({
+        period: request.query.period,
+        ticker: request.query.ticker,
+        holder: request.query.holder,
+        limit: request.query.limit,
+        neighborLimit: request.query.neighborLimit
       });
 
       response.json(result);

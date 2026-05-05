@@ -68,6 +68,10 @@ Environment variable:
 - `GET /api/ownership/holders`
 - `GET /api/ownership/history`
 - `GET /api/ownership/compare`
+- `GET /api/ownership/investor-holdings`
+- `GET /api/ownership/holder-compare`
+- `GET /api/ownership/investor-compare`
+- `GET /api/ownership/network`
 - `POST /mcp`
 
 ## Cara kerja endpoint history
@@ -177,6 +181,7 @@ Data ownership membaca folder:
 Isi awalnya:
 
 - `db_balance_history.js` untuk histori bulanan lokal/asing per ticker
+- `data_27_februari_2026.js` untuk daftar pemegang saham per 27 Februari 2026
 - `data_31_maret_2026.js` untuk daftar pemegang saham per 31 Maret 2026
 
 Ambil pemegang saham terbaru atau periode tertentu:
@@ -195,6 +200,31 @@ Bandingkan metric antar periode:
 
 ```text
 /api/ownership/compare?ticker=PGAS&from=2026-02&to=2026-03&metric=local_total
+```
+
+Lihat saham apa saja yang dipegang satu holder:
+
+```text
+/api/ownership/investor-holdings?holder=PANIN&period=2026-03&limit=50
+```
+
+Cek apakah satu holder akumulasi atau distribusi di satu saham:
+
+```text
+/api/ownership/holder-compare?ticker=PGAS&holder=PANIN&from=2026-02&to=2026-03
+```
+
+Bandingkan seluruh portofolio holder antar periode:
+
+```text
+/api/ownership/investor-compare?holder=PANIN&from=2026-02&to=2026-03&status=increased
+```
+
+Ambil node network ownership untuk saham atau holder:
+
+```text
+/api/ownership/network?ticker=PGAS&period=2026-03&limit=10&neighborLimit=5
+/api/ownership/network?holder=PANIN&period=2026-03&limit=10&neighborLimit=5
 ```
 
 Metric yang umum:
