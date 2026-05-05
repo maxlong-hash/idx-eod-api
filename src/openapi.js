@@ -456,7 +456,7 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Holder stock list.',
               content: {
                 'application/json': {
-                  schema: { type: 'object', additionalProperties: true }
+                  schema: { $ref: '#/components/schemas/OwnershipInvestorHoldingsResponse' }
                 }
               }
             }
@@ -504,7 +504,7 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Holder comparison.',
               content: {
                 'application/json': {
-                  schema: { type: 'object', additionalProperties: true }
+                  schema: { $ref: '#/components/schemas/OwnershipHolderCompareResponse' }
                 }
               }
             }
@@ -569,7 +569,7 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Holder portfolio comparison.',
               content: {
                 'application/json': {
-                  schema: { type: 'object', additionalProperties: true }
+                  schema: { $ref: '#/components/schemas/OwnershipInvestorCompareResponse' }
                 }
               }
             }
@@ -624,7 +624,7 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Ownership graph nodes and links.',
               content: {
                 'application/json': {
-                  schema: { type: 'object', additionalProperties: true }
+                  schema: { $ref: '#/components/schemas/OwnershipNetworkResponse' }
                 }
               }
             }
@@ -644,9 +644,35 @@ export function buildOpenApiSchema(baseUrl) {
             issuer_name: { type: 'string' },
             investor_name: { type: 'string' },
             investor_type: { type: 'string' },
+            holder_name: { type: 'string' },
+            investor_key: { type: 'string' },
+            type_code: { type: 'string' },
             local_foreign: { type: 'string' },
+            origin: { type: 'string' },
+            nationality: { type: 'string' },
+            country: { type: 'string' },
+            domicile: { type: 'string' },
+            jurisdiction: { type: 'string' },
+            holdings_scripless: { type: ['number', 'null'] },
+            holdings_scrip: { type: ['number', 'null'] },
             total_holding_shares: { type: ['number', 'null'] },
-            percentage: { type: ['number', 'null'] }
+            percentage: { type: ['number', 'null'] },
+            scripless_volume: { type: ['number', 'null'] },
+            script_volume: { type: ['number', 'null'] },
+            volume: { type: ['number', 'null'] },
+            ownership_pct: { type: ['number', 'null'] }
+          }
+        },
+        OwnershipHolderMatch: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            investor_name: { type: 'string' },
+            investor_key: { type: 'string' },
+            investor_type: { type: 'string' },
+            origin: { type: 'string' },
+            country: { type: 'string' },
+            domicile: { type: 'string' }
           }
         },
         OwnershipHistoryRecord: {
@@ -702,6 +728,178 @@ export function buildOpenApiSchema(baseUrl) {
             changePercent: { type: ['number', 'null'] }
           },
           required: ['ticker', 'metric', 'from', 'to', 'before', 'after', 'diff', 'changePercent']
+        },
+        OwnershipInvestorHoldingsResponse: {
+          type: 'object',
+          properties: {
+            holderQuery: { type: 'string' },
+            period: { type: ['string', 'null'] },
+            date: { type: ['string', 'null'], format: 'date' },
+            returned: { type: 'integer' },
+            holderMatches: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipHolderMatch' }
+            },
+            records: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipHolderRecord' }
+            }
+          },
+          required: ['holderQuery', 'period', 'date', 'returned', 'holderMatches', 'records']
+        },
+        OwnershipHolderComparisonFields: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['new', 'removed', 'increased', 'decreased', 'scripless_shift', 'script_shift', 'rebalanced', 'unchanged']
+            },
+            previous_volume: { type: 'number' },
+            current_volume: { type: 'number' },
+            volume_delta: { type: 'number' },
+            volume_change_percent: { type: ['number', 'null'] },
+            previous_pct: { type: 'number' },
+            current_pct: { type: 'number' },
+            pct_delta: { type: 'number' },
+            previous_scripless: { type: 'number' },
+            current_scripless: { type: 'number' },
+            scripless_delta: { type: 'number' },
+            previous_script: { type: 'number' },
+            current_script: { type: 'number' },
+            script_delta: { type: 'number' }
+          }
+        },
+        OwnershipHolderCompareResponse: {
+          allOf: [
+            { $ref: '#/components/schemas/OwnershipHolderComparisonFields' },
+            {
+              type: 'object',
+              properties: {
+                ticker: { type: 'string' },
+                holderQuery: { type: 'string' },
+                holder: { type: 'string' },
+                from: { type: 'string' },
+                to: { type: 'string' },
+                previousRecord: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/OwnershipHolderRecord' },
+                    { type: 'null' }
+                  ]
+                },
+                currentRecord: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/OwnershipHolderRecord' },
+                    { type: 'null' }
+                  ]
+                }
+              },
+              required: ['ticker', 'holderQuery', 'holder', 'from', 'to', 'previousRecord', 'currentRecord']
+            }
+          ]
+        },
+        OwnershipInvestorCompareRecord: {
+          allOf: [
+            { $ref: '#/components/schemas/OwnershipHolderComparisonFields' },
+            {
+              type: 'object',
+              properties: {
+                ticker: { type: 'string' },
+                issuer_name: { type: 'string' },
+                holder: { type: 'string' },
+                previousRecord: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/OwnershipHolderRecord' },
+                    { type: 'null' }
+                  ]
+                },
+                currentRecord: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/OwnershipHolderRecord' },
+                    { type: 'null' }
+                  ]
+                }
+              },
+              required: ['ticker', 'issuer_name', 'holder', 'previousRecord', 'currentRecord']
+            }
+          ]
+        },
+        OwnershipInvestorCompareResponse: {
+          type: 'object',
+          properties: {
+            holderQuery: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+            returned: { type: 'integer' },
+            totalMatches: { type: 'integer' },
+            holderMatches: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipHolderMatch' }
+            },
+            records: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipInvestorCompareRecord' }
+            }
+          },
+          required: ['holderQuery', 'from', 'to', 'returned', 'totalMatches', 'holderMatches', 'records']
+        },
+        OwnershipNetworkNode: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            id: { type: 'string' },
+            type: { type: 'string' },
+            label: { type: 'string' },
+            ticker: { type: 'string' },
+            issuer_name: { type: 'string' },
+            investor_name: { type: 'string' },
+            investor_type: { type: 'string' },
+            origin: { type: 'string' },
+            country: { type: 'string' },
+            domicile: { type: 'string' },
+            holderMatches: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipHolderMatch' }
+            },
+            root: { type: 'boolean' }
+          }
+        },
+        OwnershipNetworkLink: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            source: { type: 'string' },
+            target: { type: 'string' },
+            relation: { type: 'string' },
+            volume: { type: ['number', 'null'] },
+            percentage: { type: ['number', 'null'] }
+          }
+        },
+        OwnershipNetworkResponse: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            mode: { type: ['string', 'null'], enum: ['stock', 'holder', null] },
+            period: { type: ['string', 'null'] },
+            ticker: { type: 'string' },
+            holderQuery: { type: 'string' },
+            holder: { type: 'string' },
+            returnedHolders: { type: 'integer' },
+            returnedHoldings: { type: 'integer' },
+            holderMatches: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipHolderMatch' }
+            },
+            nodes: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipNetworkNode' }
+            },
+            links: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/OwnershipNetworkLink' }
+            }
+          },
+          required: ['mode', 'period', 'nodes', 'links']
         },
         OwnershipFileResponse: {
           type: 'object',
