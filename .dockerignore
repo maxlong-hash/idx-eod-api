@@ -1,4 +1,8 @@
 node_modules
+**/node_modules
+**/dist
+**/*.log
+screner MAX/fms*.txt
 npm-debug.log*
 .git
 .gitignore

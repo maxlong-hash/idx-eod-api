@@ -65,6 +65,7 @@ Environment variable:
 - `GET /privacy`
 - `GET /api/eod/history`
 - `GET /api/eod/ihsg`
+- `GET /api/screener/max`
 - `GET /api/ownership/holders`
 - `GET /api/ownership/history`
 - `GET /api/ownership/compare`
@@ -73,6 +74,65 @@ Environment variable:
 - `GET /api/ownership/investor-compare`
 - `GET /api/ownership/network`
 - `POST /mcp`
+
+## Endpoint screner MAX untuk Custom GPT
+
+Endpoint:
+
+```text
+GET /api/screener/max
+```
+
+Endpoint ini membaca file export terbaru dengan pola:
+
+```text
+./screner MAX/max-screener-*.csv
+```
+
+Kalau folder hasil screener ada di lokasi lain, set:
+
+```powershell
+$env:SCREENER_MAX_RESULTS_DIR="C:\path\to\screner MAX"
+```
+
+Untuk membatasi akses endpoint screener dengan API key:
+
+```powershell
+$env:SCREENER_API_KEY="isi_api_key_rahasia"
+```
+
+Custom GPT Actions dapat memakai authentication mode API Key/Bearer dengan value yang sama.
+
+Parameter:
+
+- `ticker` opsional: satu ticker atau beberapa ticker dipisah koma
+- `tickers` opsional: alias untuk watchlist beberapa ticker
+- `filter` opsional: `all`, `signals`, `reversal`, `momentum`, `breakout`, `passive`, atau `risk`
+- `signal` opsional: contoh `SMART SNIPER`, `SMART GAMMA`, `G ACC`
+- `regime` opsional: contoh `EXPLOSIVE BULL`
+- `quadrant` opsional: `LEADING`, `IMPROVING`, `WEAKENING`, `LAGGING`, atau `N/A`
+- `minScore` opsional
+- `limit` opsional, default `50`, maksimal `1000`
+- `sort` opsional: `score_desc`, `score_asc`, `change_desc`, `change_asc`, atau `ticker_asc`
+- `format` opsional: `json`, `csv`, atau `file_url`, default `json`
+
+Contoh untuk Custom GPT:
+
+```text
+/api/screener/max?filter=signals&limit=20
+```
+
+Contoh mencari ticker tertentu:
+
+```text
+/api/screener/max?ticker=BBCA,BRPT&format=json
+```
+
+Untuk GPT Action, masukkan schema dari:
+
+```text
+https://domain-kamu.com/openapi.json
+```
 
 ## Cara kerja endpoint history
 

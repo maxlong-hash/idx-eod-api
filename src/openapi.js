@@ -25,6 +25,119 @@ export function buildOpenApiSchema(baseUrl) {
       }
     ],
     paths: {
+      '/api/screener/max': {
+        get: {
+          operationId: 'getScreenerMaxResults',
+          summary: 'Get cached screner MAX screening results',
+          description:
+            'Returns cached screner MAX stock screening results generated from the latest max-screener CSV export. Use this endpoint from Custom GPT Actions to find ranked IDX technical signals.',
+          parameters: [
+            {
+              name: 'ticker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional single ticker or comma-separated tickers, for example BBCA or BBCA,BRPT.'
+            },
+            {
+              name: 'tickers',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional comma-separated ticker watchlist. Alias for ticker when multiple values are used.'
+            },
+            {
+              name: 'filter',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['all', 'signals', 'reversal', 'momentum', 'breakout', 'passive', 'risk'],
+                default: 'all'
+              },
+              description: 'Optional signal group filter. signals returns currently active trading signals.'
+            },
+            {
+              name: 'signal',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional exact signal filter, for example SMART SNIPER, SMART GAMMA, G ACC, or BETA BREAKOUT.'
+            },
+            {
+              name: 'regime',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional RISEN regime filter, for example EXPLOSIVE BULL.'
+            },
+            {
+              name: 'quadrant',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['LEADING', 'IMPROVING', 'WEAKENING', 'LAGGING', 'N/A']
+              },
+              description: 'Optional relative-strength quadrant filter.'
+            },
+            {
+              name: 'minScore',
+              in: 'query',
+              required: false,
+              schema: { type: 'number' },
+              description: 'Optional minimum screener score.'
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', default: 50, minimum: 1, maximum: 1000 },
+              description: 'Maximum records to return.'
+            },
+            {
+              name: 'sort',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['score_desc', 'score_asc', 'change_desc', 'change_asc', 'ticker_asc'],
+                default: 'score_desc'
+              },
+              description: 'Sort order for returned records.'
+            },
+            {
+              name: 'format',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['json', 'csv', 'file_url'],
+                default: 'json'
+              },
+              description: 'Response format. json is recommended for Custom GPT; file_url returns a CSV URL.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'Cached screner MAX results.',
+              content: {
+                'application/json': {
+                  schema: {
+                    oneOf: [
+                      { $ref: '#/components/schemas/ScreenerMaxResponse' },
+                      { $ref: '#/components/schemas/ScreenerMaxFileResponse' }
+                    ]
+                  }
+                },
+                'text/csv': {
+                  schema: { type: 'string' }
+                }
+              }
+            }
+          }
+        }
+      },
       '/api/eod/history': {
         get: {
           operationId: 'getEodHistory',
@@ -633,7 +746,123 @@ export function buildOpenApiSchema(baseUrl) {
       }
     },
     components: {
+      securitySchemes: {
+        ApiKeyAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'API key',
+          description: 'Optional bearer API key. Set SCREENER_API_KEY on the server to require this for screner MAX endpoints.'
+        }
+      },
       schemas: {
+        ScreenerMaxRecord: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ticker: { type: 'string' },
+            date: { type: 'string', format: 'date' },
+            historyBars: { type: ['integer', 'null'] },
+            historyQuality: { type: ['string', 'null'] },
+            price: { type: ['number', 'null'] },
+            changePct: { type: ['number', 'null'] },
+            signal: { type: ['string', 'null'] },
+            activeSignals: { type: ['string', 'null'] },
+            signalGroup: {
+              type: 'string',
+              enum: ['reversal', 'momentum', 'breakout', 'passive', 'risk']
+            },
+            activeSignal: { type: 'boolean' },
+            sniperLocation: { type: ['string', 'null'] },
+            lastActiveSignals: { type: ['string', 'null'] },
+            lastActiveDate: { type: ['string', 'null'], format: 'date' },
+            lastSniperLocation: { type: ['string', 'null'] },
+            regime: { type: ['string', 'null'] },
+            quadrant: { type: ['string', 'null'] },
+            rvol: { type: ['number', 'null'] },
+            ageDays: { type: ['number', 'null'] },
+            score: { type: ['number', 'null'] },
+            strategy: { type: ['string', 'null'] },
+            portfolioCapital: { type: ['number', 'null'] },
+            buy1: { type: ['number', 'null'] },
+            buy2: { type: ['number', 'null'] },
+            buy3: { type: ['number', 'null'] },
+            buy4: { type: ['number', 'null'] },
+            lot1: { type: ['number', 'null'] },
+            lot2: { type: ['number', 'null'] },
+            lot3: { type: ['number', 'null'] },
+            lot4: { type: ['number', 'null'] },
+            totalLots: { type: ['number', 'null'] },
+            totalDeployed: { type: ['number', 'null'] },
+            cashLeft: { type: ['number', 'null'] },
+            avgEntry: { type: ['number', 'null'] },
+            riskPct: { type: ['number', 'null'] },
+            riskBuy1Pct: { type: ['number', 'null'] },
+            riskAvgPct: { type: ['number', 'null'] },
+            rewardRisk: { type: ['number', 'null'] },
+            rewardRiskBuy1: { type: ['number', 'null'] },
+            rewardRiskAvg: { type: ['number', 'null'] }
+          },
+          required: ['ticker', 'date', 'signalGroup', 'activeSignal']
+        },
+        ScreenerMaxQuery: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ticker: { type: ['string', 'null'] },
+            tickers: { type: ['string', 'null'] },
+            filter: { type: 'string' },
+            signal: { type: ['string', 'null'] },
+            regime: { type: ['string', 'null'] },
+            quadrant: { type: ['string', 'null'] },
+            minScore: { type: ['number', 'null'] },
+            limit: { type: 'integer' },
+            sort: { type: 'string' }
+          }
+        },
+        ScreenerMaxResponse: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            sourceFile: { type: 'string' },
+            snapshotDate: { type: ['string', 'null'], format: 'date' },
+            latestEodDate: { type: ['string', 'null'], format: 'date' },
+            isStale: { type: 'boolean' },
+            staleReason: { type: ['string', 'null'] },
+            generatedAt: { type: 'string', format: 'date-time' },
+            totalRecords: { type: 'integer' },
+            totalMatches: { type: 'integer' },
+            returned: { type: 'integer' },
+            query: { $ref: '#/components/schemas/ScreenerMaxQuery' },
+            records: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/ScreenerMaxRecord' }
+            }
+          },
+          required: ['name', 'sourceFile', 'snapshotDate', 'latestEodDate', 'isStale', 'staleReason', 'generatedAt', 'totalRecords', 'totalMatches', 'returned', 'query', 'records']
+        },
+        ScreenerMaxFileResponse: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            sourceFile: { type: 'string' },
+            snapshotDate: { type: ['string', 'null'], format: 'date' },
+            latestEodDate: { type: ['string', 'null'], format: 'date' },
+            isStale: { type: 'boolean' },
+            staleReason: { type: ['string', 'null'] },
+            generatedAt: { type: 'string', format: 'date-time' },
+            totalMatches: { type: 'integer' },
+            returned: { type: 'integer' },
+            downloadUrl: { type: 'string', format: 'uri' },
+            openaiFileResponse: {
+              type: 'array',
+              items: {
+                type: 'string',
+                format: 'uri'
+              }
+            }
+          },
+          required: ['name', 'sourceFile', 'snapshotDate', 'latestEodDate', 'isStale', 'staleReason', 'generatedAt', 'totalMatches', 'returned', 'downloadUrl', 'openaiFileResponse']
+        },
         OwnershipHolderRecord: {
           type: 'object',
           additionalProperties: true,
