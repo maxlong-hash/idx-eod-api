@@ -1,5 +1,5 @@
 import { Activity, AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, Download, Filter, Gauge, Play, RefreshCw, Search, Settings2, Shield, SlidersHorizontal, StopCircle, Target, TrendingUp, Zap } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { fetchIhsgHistory, fetchTickerHistory, parseWatchlist } from './lib/api';
 import { IDX_UNIVERSE, IDX_UNIVERSE_COUNT } from './lib/idxUniverse';
 import { analyzeTicker, DEFAULT_SETTINGS, DEFAULT_WATCHLIST, STRATEGY_OPTIONS } from './lib/maxEngine';
@@ -89,6 +89,14 @@ function ToggleRow({ label, checked, onChange, icon }: { label: string; checked:
       </span>
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
     </label>
+  );
+}
+
+function ResultCell({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
+  return (
+    <td data-label={label} className={className}>
+      {children}
+    </td>
   );
 }
 
@@ -217,15 +225,15 @@ function ResultsTable({ results, selectedTicker, onSelect }: { results: ScanResu
             const showLastSignal = !result.activeSignal && result.lastActiveSignals.length > 0;
             return (
               <tr key={result.ticker} className={selectedTicker === result.ticker ? 'selected' : ''} onClick={() => onSelect(result.ticker)}>
-                <td>
+                <ResultCell label="Ticker">
                   <div className="ticker-stack">
                     <span className="ticker-cell">{result.ticker}</span>
                     {result.historyQuality !== 'FULL' && <span>IPO {result.historyBars} bars</span>}
                   </div>
-                </td>
-                <td>{result.latestDate}</td>
-                <td className={result.changePct >= 0 ? 'pos' : 'neg'}>{formatNumber(result.price)}</td>
-                <td>
+                </ResultCell>
+                <ResultCell label="Date">{result.latestDate}</ResultCell>
+                <ResultCell label="Price" className={result.changePct >= 0 ? 'pos' : 'neg'}>{formatNumber(result.price)}</ResultCell>
+                <ResultCell label="Signal">
                   <div className="signal-stack">
                     <span className="signal-pill" style={{ '--signal': color } as React.CSSProperties}>
                       {result.signal}
@@ -241,20 +249,20 @@ function ResultsTable({ results, selectedTicker, onSelect }: { results: ScanResu
                       </span>
                     )}
                   </div>
-                </td>
-                <td>{result.regime}</td>
-                <td className={`quad ${result.quadrant.toLowerCase()}`}>{result.quadrant}</td>
-                <td className={result.rvol >= 2 ? 'hot' : result.rvol >= 1 ? 'pos' : ''}>{result.rvol.toFixed(2)}x</td>
-                <td>
+                </ResultCell>
+                <ResultCell label="Regime">{result.regime}</ResultCell>
+                <ResultCell label="RRG" className={`quad ${result.quadrant.toLowerCase()}`}>{result.quadrant}</ResultCell>
+                <ResultCell label="RVol" className={result.rvol >= 2 ? 'hot' : result.rvol >= 1 ? 'pos' : ''}>{result.rvol.toFixed(2)}x</ResultCell>
+                <ResultCell label="Age">
                   <div className="age-stack">
                     <strong>{formatAge(result)}</strong>
                     {result.lastActiveDate && <span>{result.lastActiveDate}</span>}
                   </div>
-                </td>
-                <td>{formatNumber(result.score)}</td>
-                <td>{result.plan ? `${result.plan.riskPct.toFixed(2)}%` : '-'}</td>
-                <td>{result.plan ? `${result.plan.avgRiskPct.toFixed(2)}%` : '-'}</td>
-                <td>{result.plan ? `${formatNumber(result.plan.totalLots)}L` : '-'}</td>
+                </ResultCell>
+                <ResultCell label="Score">{formatNumber(result.score)}</ResultCell>
+                <ResultCell label="Risk B1">{result.plan ? `${result.plan.riskPct.toFixed(2)}%` : '-'}</ResultCell>
+                <ResultCell label="Risk Avg">{result.plan ? `${result.plan.avgRiskPct.toFixed(2)}%` : '-'}</ResultCell>
+                <ResultCell label="Lots">{result.plan ? `${formatNumber(result.plan.totalLots)}L` : '-'}</ResultCell>
               </tr>
             );
           })}
@@ -278,11 +286,11 @@ function DetailPanel({ result }: { result?: ScanResult }) {
   const lastSignalColor = result.lastActiveSignal ? (signalColors[result.lastActiveSignal] ?? '#8a92a6') : '#8a92a6';
   const planRows = result.plan
     ? [
-        { label: 'Buy 1', value: formatNumber(result.plan.buy1), meta: `${(result.plan.weight1 * 100).toFixed(0)}% · ${formatNumber(result.plan.lot1)}L` },
-        { label: 'Buy 2', value: formatNumber(result.plan.buy2), meta: `${(result.plan.weight2 * 100).toFixed(0)}% · ${formatNumber(result.plan.lot2)}L` },
-        { label: 'Buy 3', value: formatNumber(result.plan.buy3), meta: `${(result.plan.weight3 * 100).toFixed(0)}% · ${formatNumber(result.plan.lot3)}L` },
-        { label: 'Buy 4', value: formatNumber(result.plan.buy4), meta: `${(result.plan.weight4 * 100).toFixed(0)}% · ${formatNumber(result.plan.lot4)}L` },
-        { label: 'Grid Avg', value: formatNumber(result.plan.avgEntry), meta: `${formatNumber(result.plan.totalLots)}L · ${formatIdr(result.plan.totalDeployed)}` },
+        { label: 'Buy 1', value: formatNumber(result.plan.buy1), meta: `${(result.plan.weight1 * 100).toFixed(0)}% / ${formatNumber(result.plan.lot1)}L` },
+        { label: 'Buy 2', value: formatNumber(result.plan.buy2), meta: `${(result.plan.weight2 * 100).toFixed(0)}% / ${formatNumber(result.plan.lot2)}L` },
+        { label: 'Buy 3', value: formatNumber(result.plan.buy3), meta: `${(result.plan.weight3 * 100).toFixed(0)}% / ${formatNumber(result.plan.lot3)}L` },
+        { label: 'Buy 4', value: formatNumber(result.plan.buy4), meta: `${(result.plan.weight4 * 100).toFixed(0)}% / ${formatNumber(result.plan.lot4)}L` },
+        { label: 'Grid Avg', value: formatNumber(result.plan.avgEntry), meta: `${formatNumber(result.plan.totalLots)}L / ${formatIdr(result.plan.totalDeployed)}` },
         { label: 'Cash Left', value: formatIdr(result.plan.cashLeft), meta: `Modal ${formatIdr(result.plan.portfolioCapital)}` },
         { label: 'SL', value: formatNumber(result.plan.stopLoss), meta: 'Structure stop' },
         { label: 'TP1', value: formatNumber(result.plan.tp1), meta: 'Target 1' },
@@ -383,7 +391,7 @@ function DetailPanel({ result }: { result?: ScanResult }) {
             <div className="rrr-line">
               <span>Portfolio Manager</span>
               <strong>{formatNumber(result.plan.totalLots)} Lot</strong>
-              <span>{formatIdr(result.plan.totalDeployed)} terpakai · {formatIdr(result.plan.cashLeft)} cash</span>
+              <span>{formatIdr(result.plan.totalDeployed)} terpakai / {formatIdr(result.plan.cashLeft)} cash</span>
             </div>
             <div className="rrr-line">
               <span>{result.plan.strategy}</span>
@@ -393,7 +401,7 @@ function DetailPanel({ result }: { result?: ScanResult }) {
             <div className="rrr-line">
               <span>Reward/Risk</span>
               <strong>{result.plan.rewardRisk.toFixed(2)}R</strong>
-              <span>Avg {result.plan.avgRewardRisk.toFixed(2)}R · Upside {result.plan.upsidePct.toFixed(2)}%</span>
+              <span>Avg {result.plan.avgRewardRisk.toFixed(2)}R / Upside {result.plan.upsidePct.toFixed(2)}%</span>
             </div>
           </>
         ) : (
@@ -453,14 +461,15 @@ export function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const abortRef = useRef<AbortController | null>(null);
+  const deferredQuery = useDeferredValue(query);
 
   const filteredResults = useMemo(() => {
-    const needle = query.trim().toUpperCase();
+    const needle = deferredQuery.trim().toUpperCase();
     return results
       .filter((item) => resultMatchesFilter(item, filter))
       .filter((item) => (needle ? item.ticker.includes(needle) || item.signal.includes(needle) : true))
       .sort((a, b) => b.score - a.score);
-  }, [filter, query, results]);
+  }, [deferredQuery, filter, results]);
 
   const selected = useMemo(() => {
     return results.find((item) => item.ticker === selectedTicker) ?? filteredResults[0] ?? results[0];
