@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Download, Filter, Gauge, HelpCircle, Layers3, Play, RefreshCw, Search, Settings2, Shield, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Download, Filter, Gauge, Heart, HelpCircle, Layers3, Play, RefreshCw, Search, Settings2, Shield, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
 import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { fetchIhsgHistory, fetchTickerHistory, parseWatchlist } from './lib/api';
 import { IDX_UNIVERSE, IDX_UNIVERSE_COUNT } from './lib/idxUniverse';
@@ -744,6 +744,10 @@ export function App() {
               <HelpCircle size={18} />
               <span>Panduan</span>
             </button>
+            <a className="support-button" href="https://saweria.co/maxlong" target="_blank" rel="noreferrer">
+              <Heart size={18} />
+              <span>Support Me</span>
+            </a>
             {isScanning ? (
               <button className="danger-button" type="button" onClick={cancelScan}>
                 <StopCircle size={18} />

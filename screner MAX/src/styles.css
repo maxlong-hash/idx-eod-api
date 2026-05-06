@@ -66,6 +66,7 @@ body {
 }
 
 button,
+a,
 input,
 select,
 textarea {
@@ -251,6 +252,7 @@ h1 {
 .secondary-button,
 .danger-button,
 .guide-button,
+.support-button,
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -260,6 +262,8 @@ h1 {
   border: 1px solid transparent;
   border-radius: 8px;
   color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .primary-button {
@@ -278,6 +282,29 @@ h1 {
 .guide-button {
   padding: 0 13px;
   color: #dcecff;
+}
+
+.support-button {
+  padding: 0 14px;
+  border-color: rgba(255, 138, 0, 0.5);
+  color: #1b1305;
+  background: linear-gradient(135deg, #ffd700, #ff8a00);
+  box-shadow:
+    0 12px 30px rgba(255, 138, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  font-weight: 820;
+}
+
+.support-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 215, 0, 0.82);
+  box-shadow:
+    0 18px 38px rgba(255, 138, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.support-button svg {
+  fill: currentColor;
 }
 
 .guide-button:hover,
@@ -1155,7 +1182,8 @@ tbody tr.selected {
   }
 
   .top-actions .primary-button,
-  .top-actions .danger-button {
+  .top-actions .danger-button,
+  .top-actions .support-button {
     flex: 1;
   }
 
@@ -1272,7 +1300,7 @@ tbody tr.selected {
 
   .top-actions {
     display: grid;
-    grid-template-columns: 42px minmax(88px, 0.58fr) minmax(0, 1fr);
+    grid-template-columns: 42px minmax(92px, 0.55fr) minmax(0, 1fr);
     gap: 8px;
   }
 
@@ -1281,9 +1309,15 @@ tbody tr.selected {
   }
 
   .top-actions .guide-button,
+  .top-actions .support-button,
   .top-actions .danger-button,
   .top-actions .primary-button {
     width: 100%;
+  }
+
+  .top-actions .danger-button,
+  .top-actions .primary-button {
+    grid-column: 1 / -1;
   }
 
   .watchlist-box,
