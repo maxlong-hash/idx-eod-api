@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, Download, Filter, Gauge, Play, RefreshCw, Search, Settings2, Shield, SlidersHorizontal, StopCircle, Target, TrendingUp, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Download, Filter, Gauge, HelpCircle, Layers3, Play, RefreshCw, Search, Settings2, Shield, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
 import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { fetchIhsgHistory, fetchTickerHistory, parseWatchlist } from './lib/api';
 import { IDX_UNIVERSE, IDX_UNIVERSE_COUNT } from './lib/idxUniverse';
@@ -24,6 +24,66 @@ const signalColors: Record<string, string> = {
 };
 
 const signalLabels: SignalName[] = ['SMART SNIPER', 'SNIPER COMBO', 'BETA BREAKOUT', 'SMART GAMMA', 'G ACC', 'V-SHAPE', 'EARLY SWEEP'];
+
+const guideSignals = [
+  {
+    name: 'SNIPER COMBO',
+    group: 'Reversal / demand response',
+    use: 'Buy the dip yang masih terstruktur di area demand atau discount.',
+    note: 'Butuh volume, candle quality, aman dari crash filter, dan opsional imbalance/FVG.',
+  },
+  {
+    name: 'SMART SNIPER',
+    group: 'Upgrade dari SNIPER COMBO',
+    use: 'Reversal yang sudah lolos konteks RISEN dan tidak berada di rezim crash/downtrend normal.',
+    note: 'Ini bukan boolean sinyal baru, tetapi SNIPER yang difilter/di-upgrade oleh RISEN.',
+  },
+  {
+    name: 'BETA BREAKOUT',
+    group: 'Breakout / buy strength',
+    use: 'Trend flip bullish saat harga sudah masuk area premium.',
+    note: 'Lebih cocok untuk continuation setelah acceptance, bukan entry diskon.',
+  },
+  {
+    name: 'V-SHAPE',
+    group: 'Fast rebound / snapback',
+    use: 'Rebound cepat setelah candle merah, close menembus midpoint candle sebelumnya, dan volume melonjak.',
+    note: 'Paling perlu hati-hati karena implementasinya relatif longgar dan rawan false positive.',
+  },
+  {
+    name: 'EARLY SWEEP',
+    group: 'Liquidity sweep dini',
+    use: 'Sweep low pivot terakhir dengan RSI membaik dan candle recovery bullish di area Sniper.',
+    note: 'Sangat dini dan tidak punya filter volume eksplisit, jadi validasi likuiditas tetap penting.',
+  },
+  {
+    name: 'GAMMA PUMP',
+    group: 'Momentum continuation',
+    use: 'Harga kuat di atas EMA50/EMA200, arah bullish, candle kuat, volume naik, dan RSI valid.',
+    note: 'Anti-Crash tidak memfilter Gamma dasar dengan cara yang sama seperti Sniper/Beta/V-Shape/Early.',
+  },
+  {
+    name: 'SMART GAMMA',
+    group: 'Gamma + konfirmasi RISEN',
+    use: 'Momentum continuation yang lolos breakout/squeeze RISEN.',
+    note: 'Saat Show RISEN ON, Gamma mentah harus lolos filter SMART GAMMA agar tetap hidup.',
+  },
+  {
+    name: 'G ACC',
+    group: 'Gamma acceleration',
+    use: 'Gamma lanjutan saat close lebih tinggi dari gamma reference aktif.',
+    note: 'Ini rename/label lanjutan dari Gamma, bukan sinyal dasar terpisah.',
+  },
+];
+
+const guidePrinciples = [
+  'Mesin inti hanya punya lima sinyal dasar: Sniper, Beta, V-Shape, Gamma, dan Early. Label SMART dan G ACC adalah layer pasca-proses.',
+  'Signal di screener ini dihitung dari data EOD candle yang sudah tutup, jadi lebih stabil daripada candle realtime intraday.',
+  'Di TradingView realtime, sinyal bisa muncul/hilang sebelum candle tutup karena logika tidak memakai close-bar confirmation.',
+  'Overlap bisa terjadi: satu saham dapat punya lebih dari satu sinyal aktif, tetapi tabel tetap memilih satu label utama.',
+  'Show RISEN bukan hanya tampilan. Saat aktif, logika Sniper dan Gamma ikut berubah karena harus lolos filter SMART.',
+  'Filter Lagging menyaring terutama BETA/GAMMA yang lemah relatif terhadap sektor, bukan sekadar relatif terhadap IHSG.',
+];
 
 function formatNumber(value: number, digits = 0) {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(value);
@@ -89,6 +149,83 @@ function ToggleRow({ label, checked, onChange, icon }: { label: string; checked:
       </span>
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
     </label>
+  );
+}
+
+function GuideModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="guide-overlay" role="presentation" onMouseDown={onClose}>
+      <section className="guide-modal" role="dialog" aria-modal="true" aria-labelledby="guide-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="guide-top">
+          <div>
+            <div className="guide-kicker">
+              <BookOpen size={16} />
+              Panduan MaX Screener
+            </div>
+            <h2 id="guide-title">Cara membaca sinyal</h2>
+            <p>Ringkasan praktis dari riset MaX V7.30 agar hasil scan tidak dibaca sebagai sinyal tunggal yang berdiri sendiri.</p>
+          </div>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Tutup panduan">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="guide-content">
+          <section className="guide-section guide-alert">
+            <div>
+              <Layers3 size={20} />
+            </div>
+            <div>
+              <h3>Prinsip utama</h3>
+              <ul>
+                {guidePrinciples.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </section>
+
+          <section className="guide-section">
+            <h3>Arti tiap sinyal</h3>
+            <div className="guide-signal-grid">
+              {guideSignals.map((signal) => {
+                const color = signalColors[signal.name] ?? signalColors.HOLD;
+                return (
+                  <article key={signal.name} className="guide-signal-card">
+                    <span className="guide-signal-pill" style={{ '--signal': color } as React.CSSProperties}>
+                      {signal.name}
+                    </span>
+                    <strong>{signal.group}</strong>
+                    <p>{signal.use}</p>
+                    <small>{signal.note}</small>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="guide-section guide-usage">
+            <h3>Cara pakai cepat</h3>
+            <div>
+              <span>1</span>
+              <p>Mulai dari filter <strong>Signal Only</strong> untuk mencari saham yang punya sinyal aktif di EOD terbaru.</p>
+            </div>
+            <div>
+              <span>2</span>
+              <p>Buka detail ticker, baca <strong>Regime, RRG, RVol, Signal Age,</strong> dan <strong>Logic Notes</strong> sebelum melihat plan.</p>
+            </div>
+            <div>
+              <span>3</span>
+              <p>Untuk reversal, prioritaskan SMART SNIPER / SNIPER / EARLY di demand. Untuk momentum, cek BETA, SMART GAMMA, atau G ACC.</p>
+            </div>
+            <div>
+              <span>4</span>
+              <p>Jika muncul V-SHAPE, perlakukan sebagai sinyal agresif. Konfirmasi ulang dengan struktur harga, volume, dan risiko.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -459,6 +596,7 @@ export function App() {
   const [errors, setErrors] = useState<string[]>([]);
   const [selectedTicker, setSelectedTicker] = useState<string | undefined>();
   const [isScanning, setIsScanning] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === '1');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const abortRef = useRef<AbortController | null>(null);
   const deferredQuery = useDeferredValue(query);
@@ -602,6 +740,10 @@ export function App() {
             <button className="icon-button" type="button" onClick={exportCsv} disabled={!filteredResults.length} title="Export CSV">
               <Download size={18} />
             </button>
+            <button className="guide-button" type="button" onClick={() => setIsGuideOpen(true)}>
+              <HelpCircle size={18} />
+              <span>Panduan</span>
+            </button>
             {isScanning ? (
               <button className="danger-button" type="button" onClick={cancelScan}>
                 <StopCircle size={18} />
@@ -723,6 +865,7 @@ export function App() {
       </main>
 
       <DetailPanel result={selected} />
+      {isGuideOpen && <GuideModal onClose={() => setIsGuideOpen(false)} />}
     </div>
   );
 }
