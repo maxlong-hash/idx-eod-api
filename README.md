@@ -75,6 +75,28 @@ Environment variable:
 - `GET /api/ownership/network`
 - `POST /mcp`
 
+## Proteksi API Key
+
+Untuk membuat endpoint data hanya bisa dipakai oleh orang yang punya password/API key, set:
+
+```powershell
+$env:API_KEY="isi_api_key_rahasia"
+```
+
+Jika `API_KEY` aktif, endpoint berikut wajib memakai header:
+
+```text
+Authorization: Bearer isi_api_key_rahasia
+```
+
+Endpoint publik yang tetap bisa dibuka tanpa key:
+
+- `GET /health`
+- `GET /openapi.json`
+- `GET /privacy`
+
+Response `format=file_url` akan otomatis memakai download token sementara agar URL CSV tetap bisa dipakai Custom GPT tanpa menaruh API key asli di URL.
+
 ## Endpoint screner MAX untuk Custom GPT
 
 Endpoint:
@@ -98,10 +120,10 @@ $env:SCREENER_MAX_RESULTS_DIR="C:\path\to\screner MAX"
 Untuk membatasi akses endpoint screener dengan API key:
 
 ```powershell
-$env:SCREENER_API_KEY="isi_api_key_rahasia"
+$env:API_KEY="isi_api_key_rahasia"
 ```
 
-Custom GPT Actions dapat memakai authentication mode API Key/Bearer dengan value yang sama.
+Custom GPT Actions dapat memakai authentication mode API Key/Bearer dengan value yang sama. `SCREENER_API_KEY` masih didukung untuk proteksi khusus screener saja, tetapi `API_KEY` lebih direkomendasikan karena melindungi semua endpoint data.
 
 Parameter:
 
@@ -316,6 +338,12 @@ https://eod.maxlong.my.id/privacy
 ```
 
 Kalau schema berubah, lakukan `Import from URL` lagi di Actions.
+
+Jika `API_KEY` aktif, di Custom GPT Actions pilih:
+
+- Authentication: `API Key`
+- Auth Type: `Bearer`
+- API Key: isi dengan nilai `API_KEY`
 
 ## Deploy ke VPS
 

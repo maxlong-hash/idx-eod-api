@@ -1,5 +1,6 @@
 import path from 'node:path';
 import process from 'node:process';
+import crypto from 'node:crypto';
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -8,6 +9,10 @@ import { createEodMcpServer } from './mcp-server.js';
 import { buildOpenApiSchema, getRequestBaseUrl } from './openapi.js';
 import { OwnershipDataStore } from './ownership-store.js';
 import { ScreenerMaxStore } from './screener-max-store.js';
+
+const DOWNLOAD_EXPIRES_PARAM = 'expires';
+const DOWNLOAD_TOKEN_PARAM = 'downloadToken';
+const DOWNLOAD_TOKEN_TTL_SECONDS = 10 * 60;
 
 function getArgValue(flagName) {
   const direct = process.argv.find((arg) => arg.startsWith(`${flagName}=`));
@@ -37,7 +42,8 @@ function resolveOptions() {
   const screenerResultsDir = process.env.SCREENER_MAX_RESULTS_DIR
     ? path.resolve(process.env.SCREENER_MAX_RESULTS_DIR)
     : path.resolve(process.cwd(), 'screner MAX');
-  const screenerApiKey = process.env.SCREENER_API_KEY ?? null;
+  const apiKey = process.env.API_KEY || process.env.EOD_API_KEY || null;
+  const screenerApiKey = process.env.SCREENER_API_KEY || null;
 
   return {
     transport,
@@ -47,6 +53,7 @@ function resolveOptions() {
     filePath,
     ownershipDataDir,
     screenerResultsDir,
+    apiKey,
     screenerApiKey
   };
 }
@@ -108,20 +115,95 @@ function serializeRecordsToCsv(records) {
   return lines.join('\n');
 }
 
-function requireBearerToken(apiKey) {
+function canonicalizeDownloadParams(searchParams) {
+  const pairs = [];
+  for (const [key, value] of searchParams.entries()) {
+    if (key === DOWNLOAD_EXPIRES_PARAM || key === DOWNLOAD_TOKEN_PARAM) {
+      continue;
+    }
+
+    pairs.push([key, value]);
+  }
+
+  pairs.sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+    if (leftKey === rightKey) {
+      return leftValue.localeCompare(rightValue);
+    }
+
+    return leftKey.localeCompare(rightKey);
+  });
+
+  return pairs
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+}
+
+function signDownloadToken(apiKey, pathname, searchParams, expiresAt) {
+  const canonicalQuery = canonicalizeDownloadParams(searchParams);
+  const payload = `${pathname}\n${canonicalQuery}\n${expiresAt}`;
+
+  return crypto
+    .createHmac('sha256', apiKey)
+    .update(payload)
+    .digest('base64url');
+}
+
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function hasValidBearerOrApiKey(request, apiKey) {
+  const authorization = request.get?.('authorization') ?? '';
+  const bearerToken = authorization.toLowerCase().startsWith('bearer ')
+    ? authorization.slice(7).trim()
+    : null;
+  const headerToken = request.get?.('x-api-key') ?? null;
+
+  return bearerToken === apiKey || headerToken === apiKey;
+}
+
+function hasValidSignedDownloadToken(request, apiKey) {
+  const url = new URL(request.originalUrl ?? request.url, 'http://localhost');
+  const pathname = url.pathname;
+
+  if (!pathname.startsWith('/files/')) {
+    return false;
+  }
+
+  const token = url.searchParams.get(DOWNLOAD_TOKEN_PARAM);
+  const expiresAt = Number(url.searchParams.get(DOWNLOAD_EXPIRES_PARAM));
+
+  if (!token || !Number.isFinite(expiresAt)) {
+    return false;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (expiresAt < now) {
+    return false;
+  }
+
+  const expectedToken = signDownloadToken(apiKey, pathname, url.searchParams, String(expiresAt));
+  return safeEqual(token, expectedToken);
+}
+
+function requireApiKey(apiKey, { allowSignedDownloadToken = false } = {}) {
   return (request, response, next) => {
     if (!apiKey) {
       next();
       return;
     }
 
-    const authorization = request.get?.('authorization') ?? '';
-    const bearerToken = authorization.toLowerCase().startsWith('bearer ')
-      ? authorization.slice(7).trim()
-      : null;
-    const headerToken = request.get?.('x-api-key') ?? null;
-
-    if (bearerToken === apiKey || headerToken === apiKey) {
+    if (
+      hasValidBearerOrApiKey(request, apiKey)
+      || (allowSignedDownloadToken && hasValidSignedDownloadToken(request, apiKey))
+    ) {
       next();
       return;
     }
@@ -134,14 +216,31 @@ function buildHistoryFilename(ticker, startDate, endDate) {
   return `${ticker}_${startDate}_${endDate}.csv`;
 }
 
-function buildHistoryDownloadUrl(baseUrl, { ticker, startDate, endDate, order }) {
+function buildProtectedDownloadUrl(baseUrl, pathname, query, apiKey) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    addOptionalParam(params, key, value);
+  }
+
+  if (apiKey) {
+    const expiresAt = String(Math.floor(Date.now() / 1000) + DOWNLOAD_TOKEN_TTL_SECONDS);
+    params.set(DOWNLOAD_EXPIRES_PARAM, expiresAt);
+    params.set(DOWNLOAD_TOKEN_PARAM, signDownloadToken(apiKey, pathname, params, expiresAt));
+  }
+
+  const suffix = params.toString();
+  return suffix ? `${baseUrl}${pathname}?${suffix}` : `${baseUrl}${pathname}`;
+}
+
+function buildHistoryDownloadUrl(baseUrl, { ticker, startDate, endDate, order }, apiKey) {
   const params = new URLSearchParams({
     ticker,
     startDate,
     endDate,
     order
   });
-  return `${baseUrl}/files/eod-history.csv?${params.toString()}`;
+
+  return buildProtectedDownloadUrl(baseUrl, '/files/eod-history.csv', Object.fromEntries(params.entries()), apiKey);
 }
 
 function addOptionalParam(params, name, value) {
@@ -150,22 +249,19 @@ function addOptionalParam(params, name, value) {
   }
 }
 
-function buildOwnershipDownloadUrl(baseUrl, fileName, query) {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    addOptionalParam(params, key, value);
-  }
-  return `${baseUrl}/files/${fileName}.csv?${params.toString()}`;
+function buildOwnershipDownloadUrl(baseUrl, fileName, query, apiKey) {
+  return buildProtectedDownloadUrl(baseUrl, `/files/${fileName}.csv`, query, apiKey);
 }
 
-function buildScreenerDownloadUrl(baseUrl, query) {
-  const params = new URLSearchParams();
+function buildScreenerDownloadUrl(baseUrl, query, apiKey) {
+  const filteredQuery = {};
   for (const key of ['ticker', 'tickers', 'filter', 'signal', 'regime', 'quadrant', 'minScore', 'limit', 'sort']) {
-    addOptionalParam(params, key, query[key]);
+    if (query[key] !== undefined && query[key] !== null && query[key] !== '') {
+      filteredQuery[key] = query[key];
+    }
   }
 
-  const suffix = params.toString();
-  return suffix ? `${baseUrl}/files/screener-max.csv?${suffix}` : `${baseUrl}/files/screener-max.csv`;
+  return buildProtectedDownloadUrl(baseUrl, '/files/screener-max.csv', filteredQuery, apiKey);
 }
 
 function addScreenerFreshness(result, store) {
@@ -201,7 +297,10 @@ async function startStdioServer(store) {
 
 async function startHttpServer(store, ownershipStore, screenerStore, options) {
   const app = createMcpExpressApp({ host: options.host });
-  const requireScreenerAuth = requireBearerToken(options.screenerApiKey);
+  const requireDataAuth = requireApiKey(options.apiKey, { allowSignedDownloadToken: true });
+  const requireScreenerAuth = requireApiKey(options.apiKey ? null : options.screenerApiKey, {
+    allowSignedDownloadToken: true
+  });
 
   app.get('/', async (_request, response) => {
     response.json({
@@ -214,6 +313,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
       historyEndpoint: '/api/eod/history',
       ihsgEndpoint: '/api/eod/ihsg',
       screenerMaxEndpoint: '/api/screener/max',
+      authRequiredForDataEndpoints: Boolean(options.apiKey),
       ownershipEndpoints: {
         holders: '/api/ownership/holders',
         history: '/api/ownership/history',
@@ -263,6 +363,8 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
     const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
     response.json(buildOpenApiSchema(baseUrl));
   });
+
+  app.use(['/api', '/files', '/mcp'], requireDataAuth);
 
   app.get('/files/eod-history.csv', async (request, response) => {
     try {
@@ -435,7 +537,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
         startDate: earliestReturnedDate,
         endDate: latestReturnedDate,
         order
-      });
+      }, options.apiKey);
 
       if (format === 'file_url') {
         response.json({
@@ -488,7 +590,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
 
       if (format === 'file_url') {
         const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
-        const downloadUrl = buildScreenerDownloadUrl(baseUrl, request.query);
+        const downloadUrl = buildScreenerDownloadUrl(baseUrl, request.query, options.apiKey ?? options.screenerApiKey);
         response.json({
           name: result.name,
           sourceFile: result.sourceFile,
@@ -548,7 +650,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
         minPercentage: request.query.minPercentage,
         limit: request.query.limit,
         sort: request.query.sort
-      });
+      }, options.apiKey);
 
       if (format === 'file_url') {
         response.json({
@@ -600,7 +702,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
         startDate: request.query.startDate,
         endDate: request.query.endDate,
         order
-      });
+      }, options.apiKey);
 
       if (format === 'file_url') {
         response.json({

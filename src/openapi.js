@@ -24,6 +24,11 @@ export function buildOpenApiSchema(baseUrl) {
         url: baseUrl
       }
     ],
+    security: [
+      {
+        ApiKeyAuth: []
+      }
+    ],
     paths: {
       '/api/screener/max': {
         get: {
@@ -751,7 +756,7 @@ export function buildOpenApiSchema(baseUrl) {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'API key',
-          description: 'Optional bearer API key. Set SCREENER_API_KEY on the server to require this for screner MAX endpoints.'
+          description: 'Bearer API key for protected data endpoints. In Custom GPT Actions, set Authentication to API Key and Auth Type to Bearer.'
         }
       },
       schemas: {
