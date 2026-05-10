@@ -11,6 +11,65 @@ export function getRequestBaseUrl(request, configuredPublicBaseUrl = null) {
 }
 
 export function buildOpenApiSchema(baseUrl) {
+  const broksumJsonResponse = {
+    '200': {
+      description: 'Broksum response.',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/BroksumGenericResponse' }
+        }
+      }
+    }
+  };
+  const broksumExportResponse = {
+    '200': {
+      description: 'Broksum export.',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/BroksumGenericResponse' }
+        },
+        'text/csv': {
+          schema: { type: 'string' }
+        }
+      }
+    }
+  };
+  const broksumTickerParam = {
+    name: 'ticker',
+    in: 'query',
+    required: true,
+    schema: { type: 'string' },
+    description: 'Stock ticker, for example BBCA or PGAS.'
+  };
+  const broksumStartDateParam = {
+    name: 'startDate',
+    in: 'query',
+    required: false,
+    schema: { type: 'string', format: 'date' },
+    description: 'Optional start date YYYY-MM-DD.'
+  };
+  const broksumEndDateParam = {
+    name: 'endDate',
+    in: 'query',
+    required: false,
+    schema: { type: 'string', format: 'date' },
+    description: 'Optional end date YYYY-MM-DD.'
+  };
+  const broksumLimitParam = {
+    name: 'limit',
+    in: 'query',
+    required: false,
+    schema: { type: 'integer', default: 50, minimum: 1, maximum: 1000 },
+    description: 'Maximum records to return.'
+  };
+  const broksumTopNParam = {
+    name: 'topN',
+    in: 'query',
+    required: false,
+    schema: { type: 'integer', default: 5, minimum: 1, maximum: 20 },
+    description: 'Number of top net buyer/seller brokers to include.'
+  };
+
   return {
     openapi: '3.1.0',
     info: {
@@ -30,6 +89,286 @@ export function buildOpenApiSchema(baseUrl) {
       }
     ],
     paths: {
+      '/api/broksum/availability': {
+        get: {
+          operationId: 'getBroksumAvailability',
+          summary: 'Get broksum data availability',
+          description: 'Returns available broker summary dates and optional ticker coverage.',
+          parameters: [
+            {
+              name: 'ticker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional ticker to check coverage for.'
+            },
+            broksumStartDateParam,
+            broksumEndDateParam
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/ticker/history': {
+        get: {
+          operationId: 'getBroksumTickerHistory',
+          summary: 'Get daily broksum history for a ticker',
+          description: 'Returns daily broker-summary flow for a ticker, including foreign/local net, top net buyers/sellers, broker concentration, EOD close, and NBSA.',
+          parameters: [
+            broksumTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'order',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
+              description: 'Sort order by date.'
+            },
+            broksumTopNParam,
+            broksumLimitParam
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/ticker/brokers': {
+        get: {
+          operationId: 'getBroksumTickerBrokers',
+          summary: 'Get broker accumulation/distribution for a ticker',
+          description: 'Aggregates broker buy/sell flow over a date range for one ticker. Use this to identify which brokers accumulated or distributed.',
+          parameters: [
+            broksumTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'broker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional broker code, for example GR, BK, YP.'
+            },
+            {
+              name: 'sort',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['net_value_desc', 'net_value_asc', 'buy_value_desc', 'sell_value_desc', 'ticker_asc']
+              },
+              description: 'Sort order.'
+            },
+            {
+              name: 'includeDaily',
+              in: 'query',
+              required: false,
+              schema: { type: 'boolean', default: false },
+              description: 'Set true to include daily rows for each broker.'
+            },
+            broksumLimitParam
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/market/ranking': {
+        get: {
+          operationId: 'getBroksumMarketRanking',
+          summary: 'Rank market broksum flows',
+          description: 'Ranks all tickers on one date by accumulation, distribution, foreign flow, concentration, or total value.',
+          parameters: [
+            {
+              name: 'date',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'Trading date YYYY-MM-DD. Defaults to latest available broksum date.'
+            },
+            {
+              name: 'side',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['accumulation', 'distribution', 'foreign_accumulation', 'foreign_distribution', 'concentration', 'value'],
+                default: 'accumulation'
+              },
+              description: 'Ranking mode.'
+            },
+            broksumTopNParam,
+            broksumLimitParam
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/raw': {
+        get: {
+          operationId: 'getBroksumRaw',
+          summary: 'Get raw broksum rows',
+          description: 'Returns raw broker summary rows for one ticker and date, optionally filtered by broker, transaction type, or investor group.',
+          parameters: [
+            broksumTickerParam,
+            {
+              name: 'date',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'Trading date YYYY-MM-DD. Defaults to latest available broksum date.'
+            },
+            {
+              name: 'broker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional broker code.'
+            },
+            {
+              name: 'transactionType',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['BUY', 'SELL'] },
+              description: 'Optional transaction side.'
+            },
+            {
+              name: 'investorGroup',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['FOREIGN', 'LOCAL', 'GOVERNMENT'] },
+              description: 'Optional investor group.'
+            },
+            broksumLimitParam
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/broker/history': {
+        get: {
+          operationId: 'getBroksumBrokerHistory',
+          summary: 'Get broker flow history',
+          description: 'Advanced endpoint for tracking one broker across a ticker or across the market. Without ticker, range is limited because it scans many files.',
+          parameters: [
+            {
+              name: 'broker',
+              in: 'query',
+              required: true,
+              schema: { type: 'string' },
+              description: 'Broker code, for example GR, BK, YP.'
+            },
+            {
+              name: 'ticker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional ticker. If omitted, scans market files for the date range.'
+            },
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'sort',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['net_value_desc', 'net_value_asc', 'buy_value_desc', 'sell_value_desc', 'ticker_asc', 'date_asc', 'date_desc']
+              },
+              description: 'Sort order.'
+            },
+            broksumLimitParam
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/signal': {
+        get: {
+          operationId: 'getBroksumSignal',
+          summary: 'Get bandarmology signal for a ticker',
+          description: 'Advanced endpoint that summarizes broker flow into an accumulation/distribution signal with score, confidence, reasons, and caveats.',
+          parameters: [
+            broksumTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/compare': {
+        get: {
+          operationId: 'compareBroksumPeriods',
+          summary: 'Compare two broksum periods',
+          description: 'Advanced endpoint for comparing broker flow between two custom periods for one ticker.',
+          parameters: [
+            broksumTickerParam,
+            {
+              name: 'fromStart',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', format: 'date' },
+              description: 'First period start date.'
+            },
+            {
+              name: 'fromEnd',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', format: 'date' },
+              description: 'First period end date.'
+            },
+            {
+              name: 'toStart',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', format: 'date' },
+              description: 'Second period start date.'
+            },
+            {
+              name: 'toEnd',
+              in: 'query',
+              required: true,
+              schema: { type: 'string', format: 'date' },
+              description: 'Second period end date.'
+            }
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/export': {
+        get: {
+          operationId: 'exportBroksumData',
+          summary: 'Export broksum data',
+          description: 'Advanced endpoint for exporting ticker history, broker aggregate, or raw broksum data as CSV or JSON.',
+          parameters: [
+            broksumTickerParam,
+            {
+              name: 'type',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['history', 'brokers', 'raw'], default: 'history' },
+              description: 'Export type.'
+            },
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'date',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'Required for type=raw unless latest date is acceptable.'
+            },
+            {
+              name: 'broker',
+              in: 'query',
+              required: false,
+              schema: { type: 'string' },
+              description: 'Optional broker code filter.'
+            },
+            {
+              name: 'format',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['csv', 'json'], default: 'csv' },
+              description: 'Response format.'
+            },
+            broksumLimitParam
+          ],
+          responses: broksumExportResponse
+        }
+      },
       '/api/screener/max': {
         get: {
           operationId: 'getScreenerMaxResults',
@@ -760,6 +1099,54 @@ export function buildOpenApiSchema(baseUrl) {
         }
       },
       schemas: {
+        BroksumGenericResponse: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ticker: { type: ['string', 'null'] },
+            date: { type: ['string', 'null'], format: 'date' },
+            startDate: { type: ['string', 'null'], format: 'date' },
+            endDate: { type: ['string', 'null'], format: 'date' },
+            broker: { type: ['string', 'null'] },
+            side: { type: ['string', 'null'] },
+            label: { type: ['string', 'null'] },
+            score: { type: ['number', 'null'] },
+            confidence: { type: ['number', 'null'] },
+            totalDates: { type: ['integer', 'null'] },
+            totalMatches: { type: ['integer', 'null'] },
+            returned: { type: ['integer', 'null'] },
+            summary: {
+              type: ['object', 'null'],
+              additionalProperties: true,
+              properties: {}
+            },
+            records: {
+              type: ['array', 'null'],
+              items: {
+                type: 'object',
+                additionalProperties: true,
+                properties: {}
+              }
+            },
+            dates: {
+              type: ['array', 'null'],
+              items: {
+                oneOf: [
+                  { type: 'string' },
+                  {
+                    type: 'object',
+                    additionalProperties: true,
+                    properties: {}
+                  }
+                ]
+              }
+            },
+            reasons: {
+              type: ['array', 'null'],
+              items: { type: 'string' }
+            }
+          }
+        },
         ScreenerMaxRecord: {
           type: 'object',
           additionalProperties: true,

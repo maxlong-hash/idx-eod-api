@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { EodDataStore } from './eod-store.js';
 import { createEodMcpServer } from './mcp-server.js';
 import { buildOpenApiSchema, getRequestBaseUrl } from './openapi.js';
+import { BroksumDataStore } from './broksum-store.js';
 import { OwnershipDataStore } from './ownership-store.js';
 import { ScreenerMaxStore } from './screener-max-store.js';
 
@@ -42,6 +43,9 @@ function resolveOptions() {
   const screenerResultsDir = process.env.SCREENER_MAX_RESULTS_DIR
     ? path.resolve(process.env.SCREENER_MAX_RESULTS_DIR)
     : path.resolve(process.cwd(), 'screner MAX');
+  const broksumDataDir = process.env.BROKSUM_DATA_DIR
+    ? path.resolve(process.env.BROKSUM_DATA_DIR)
+    : path.resolve(process.cwd(), 'Scrape stockbit', '2023');
   const apiKey = process.env.API_KEY || process.env.EOD_API_KEY || null;
   const screenerApiKey = process.env.SCREENER_API_KEY || null;
 
@@ -53,6 +57,7 @@ function resolveOptions() {
     filePath,
     ownershipDataDir,
     screenerResultsDir,
+    broksumDataDir,
     apiKey,
     screenerApiKey
   };
@@ -113,6 +118,39 @@ function serializeRecordsToCsv(records) {
   }
 
   return lines.join('\n');
+}
+
+function flattenCsvValue(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (Array.isArray(value) || typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return value;
+}
+
+function serializeGenericRecordsToCsv(records) {
+  const rows = Array.isArray(records) ? records : [];
+  const headers = Array.from(
+    rows.reduce((set, record) => {
+      for (const key of Object.keys(record ?? {})) {
+        set.add(key);
+      }
+      return set;
+    }, new Set())
+  );
+
+  if (headers.length === 0) {
+    return '';
+  }
+
+  return [
+    headers.join(','),
+    ...rows.map((record) => headers.map((header) => csvEscape(flattenCsvValue(record?.[header]))).join(','))
+  ].join('\n');
 }
 
 function canonicalizeDownloadParams(searchParams) {
@@ -295,7 +333,7 @@ async function startStdioServer(store) {
   process.on('SIGTERM', shutdown);
 }
 
-async function startHttpServer(store, ownershipStore, screenerStore, options) {
+async function startHttpServer(store, ownershipStore, screenerStore, broksumStore, options) {
   const app = createMcpExpressApp({ host: options.host });
   const requireDataAuth = requireApiKey(options.apiKey, { allowSignedDownloadToken: true });
   const requireScreenerAuth = requireApiKey(options.apiKey ? null : options.screenerApiKey, {
@@ -313,6 +351,17 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
       historyEndpoint: '/api/eod/history',
       ihsgEndpoint: '/api/eod/ihsg',
       screenerMaxEndpoint: '/api/screener/max',
+      broksumEndpoints: {
+        availability: '/api/broksum/availability',
+        tickerHistory: '/api/broksum/ticker/history',
+        tickerBrokers: '/api/broksum/ticker/brokers',
+        marketRanking: '/api/broksum/market/ranking',
+        raw: '/api/broksum/raw',
+        brokerHistory: '/api/broksum/broker/history',
+        signal: '/api/broksum/signal',
+        compare: '/api/broksum/compare',
+        export: '/api/broksum/export'
+      },
       authRequiredForDataEndpoints: Boolean(options.apiKey),
       ownershipEndpoints: {
         holders: '/api/ownership/holders',
@@ -325,7 +374,8 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
       },
       stats: store.getStats(),
       ownershipStats: ownershipStore.getStats(),
-      screenerMaxStats: screenerStore.getStats()
+      screenerMaxStats: screenerStore.getStats(),
+      broksumStats: broksumStore.getStats()
     });
   });
 
@@ -334,7 +384,8 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
       status: 'ok',
       stats: store.getStats(),
       ownershipStats: ownershipStore.getStats(),
-      screenerMaxStats: screenerStore.getStats()
+      screenerMaxStats: screenerStore.getStats(),
+      broksumStats: broksumStore.getStats()
     });
   });
 
@@ -613,6 +664,201 @@ async function startHttpServer(store, ownershipStore, screenerStore, options) {
     }
   });
 
+  app.get('/api/broksum/availability', async (request, response) => {
+    try {
+      response.json(await broksumStore.getAvailability({
+        ticker: request.query.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/raw', async (request, response) => {
+    try {
+      response.json(await broksumStore.getRaw({
+        ticker: request.query.ticker,
+        date: request.query.date,
+        broker: request.query.broker,
+        transactionType: request.query.transactionType,
+        investorGroup: request.query.investorGroup,
+        limit: request.query.limit,
+        sort: request.query.sort
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/ticker/history', async (request, response) => {
+    try {
+      response.json(await broksumStore.getTickerHistory({
+        ticker: request.query.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate,
+        order: request.query.order,
+        topN: request.query.topN,
+        limit: request.query.limit
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/ticker/brokers', async (request, response) => {
+    try {
+      response.json(await broksumStore.getTickerBrokers({
+        ticker: request.query.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate,
+        broker: request.query.broker,
+        limit: request.query.limit,
+        sort: request.query.sort,
+        includeDaily: request.query.includeDaily === 'true'
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/market/ranking', async (request, response) => {
+    try {
+      response.json(await broksumStore.getMarketRanking({
+        date: request.query.date,
+        side: request.query.side,
+        limit: request.query.limit,
+        topN: request.query.topN
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/broker/history', async (request, response) => {
+    try {
+      response.json(await broksumStore.getBrokerHistory({
+        broker: request.query.broker,
+        ticker: request.query.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate,
+        limit: request.query.limit,
+        sort: request.query.sort
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/signal', async (request, response) => {
+    try {
+      response.json(await broksumStore.getSignal({
+        ticker: request.query.ticker,
+        startDate: request.query.startDate,
+        endDate: request.query.endDate
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/compare', async (request, response) => {
+    try {
+      response.json(await broksumStore.compare({
+        ticker: request.query.ticker,
+        fromStart: request.query.fromStart,
+        fromEnd: request.query.fromEnd,
+        toStart: request.query.toStart,
+        toEnd: request.query.toEnd
+      }));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/export', async (request, response) => {
+    try {
+      const type = String(request.query.type ?? 'history').trim().toLowerCase();
+      const format = String(request.query.format ?? 'csv').trim().toLowerCase();
+      if (format !== 'json' && format !== 'csv') {
+        sendError(response, 400, 'format must be json or csv');
+        return;
+      }
+
+      let result;
+      let records;
+      if (type === 'brokers') {
+        result = await broksumStore.getTickerBrokers({
+          ticker: request.query.ticker,
+          startDate: request.query.startDate,
+          endDate: request.query.endDate,
+          broker: request.query.broker,
+          limit: request.query.limit,
+          sort: request.query.sort
+        });
+        records = result.records;
+      } else if (type === 'raw') {
+        result = await broksumStore.getRaw({
+          ticker: request.query.ticker,
+          date: request.query.date,
+          broker: request.query.broker,
+          transactionType: request.query.transactionType,
+          investorGroup: request.query.investorGroup,
+          limit: request.query.limit,
+          sort: request.query.sort
+        });
+        records = result.records.map((record) => ({
+          ...record,
+          brokerCode: record.broker?.code,
+          brokerName: record.broker?.name
+        }));
+      } else {
+        result = await broksumStore.getTickerHistory({
+          ticker: request.query.ticker,
+          startDate: request.query.startDate,
+          endDate: request.query.endDate,
+          order: request.query.order,
+          topN: request.query.topN,
+          limit: request.query.limit
+        });
+        records = result.records.map((record) => ({
+          ticker: record.ticker,
+          date: record.date,
+          rawRecords: record.rawRecords,
+          brokerCount: record.brokerCount,
+          buyValue: record.buyValue,
+          sellValue: record.sellValue,
+          totalValue: record.totalValue,
+          foreignNetValue: record.foreignNetValue,
+          localNetValue: record.localNetValue,
+          governmentNetValue: record.governmentNetValue,
+          brokerConcentrationPct: record.brokerConcentrationPct,
+          topNetBuyerCode: record.topNetBuyer?.code,
+          topNetBuyerValue: record.topNetBuyer?.netValue,
+          topNetSellerCode: record.topNetSeller?.code,
+          topNetSellerValue: record.topNetSeller?.netValue,
+          signalLabel: record.bandarSignal?.label,
+          signalScore: record.bandarSignal?.score,
+          close: record.eod?.close,
+          changePercent: record.eod?.changePercent,
+          nbsa: record.eod?.nbsa
+        }));
+      }
+
+      if (format === 'json') {
+        response.json({ ...result, exportType: type });
+        return;
+      }
+
+      const ticker = String(request.query.ticker ?? 'broksum').trim().toUpperCase();
+      response.setHeader('Content-Disposition', `attachment; filename="${ticker}_${type}_broksum.csv"`);
+      response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(records));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
   app.get('/api/ownership/holders', async (request, response) => {
     try {
       const format = String(request.query.format ?? 'file_url').trim().toLowerCase();
@@ -884,9 +1130,14 @@ async function main() {
   const screenerStore = new ScreenerMaxStore({
     resultsDir: options.screenerResultsDir
   });
+  const broksumStore = new BroksumDataStore({
+    dataDir: options.broksumDataDir,
+    eodStore: store
+  });
 
   await store.ensureLoaded();
   await ownershipStore.ensureLoaded();
+  await broksumStore.ensureLoaded();
   try {
     await screenerStore.ensureLoaded();
   } catch (error) {
@@ -899,7 +1150,7 @@ async function main() {
   }
 
   if (options.transport === 'http') {
-    await startHttpServer(store, ownershipStore, screenerStore, options);
+    await startHttpServer(store, ownershipStore, screenerStore, broksumStore, options);
     return;
   }
 

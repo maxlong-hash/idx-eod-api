@@ -2,6 +2,7 @@ node_modules
 **/node_modules
 **/dist
 **/*.log
+Scrape stockbit/
 screner MAX/fms*.txt
 npm-debug.log*
 .git

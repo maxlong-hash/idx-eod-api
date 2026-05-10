@@ -10,8 +10,11 @@ services:
       API_KEY: ${API_KEY:-}
       EOD_API_KEY: ${EOD_API_KEY:-}
       SCREENER_API_KEY: ${SCREENER_API_KEY:-}
+      BROKSUM_DATA_DIR: /app/Scrape stockbit/2023
     expose:
       - "3000"
+    volumes:
+      - "./Scrape stockbit/2023:/app/Scrape stockbit/2023:ro"
 
   caddy:
     image: caddy:2

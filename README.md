@@ -73,6 +73,15 @@ Environment variable:
 - `GET /api/ownership/holder-compare`
 - `GET /api/ownership/investor-compare`
 - `GET /api/ownership/network`
+- `GET /api/broksum/availability`
+- `GET /api/broksum/ticker/history`
+- `GET /api/broksum/ticker/brokers`
+- `GET /api/broksum/market/ranking`
+- `GET /api/broksum/raw`
+- `GET /api/broksum/broker/history`
+- `GET /api/broksum/signal`
+- `GET /api/broksum/compare`
+- `GET /api/broksum/export`
 - `POST /mcp`
 
 ## Proteksi API Key
@@ -96,6 +105,41 @@ Endpoint publik yang tetap bisa dibuka tanpa key:
 - `GET /privacy`
 
 Response `format=file_url` akan otomatis memakai download token sementara agar URL CSV tetap bisa dipakai Custom GPT tanpa menaruh API key asli di URL.
+
+## Endpoint broksum / bandarmologi
+
+Data broksum dibaca dari folder:
+
+```text
+./Scrape stockbit/2023/brokerdata_YYYY-MM-DD/TICKER_brokerdata.json
+```
+
+Kalau folder data ada di lokasi lain, set:
+
+```powershell
+$env:BROKSUM_DATA_DIR="C:\path\to\Scrape stockbit\2023"
+```
+
+Endpoint utama:
+
+```text
+/api/broksum/availability
+/api/broksum/ticker/history?ticker=PGAS&startDate=2026-04-01&endDate=2026-05-08
+/api/broksum/ticker/brokers?ticker=PGAS&startDate=2026-04-01&endDate=2026-05-08
+/api/broksum/market/ranking?date=2026-05-08&side=accumulation&limit=50
+/api/broksum/raw?ticker=PGAS&date=2026-05-08
+```
+
+Endpoint advanced:
+
+```text
+/api/broksum/broker/history?broker=GR&ticker=PGAS&startDate=2026-04-01&endDate=2026-05-08
+/api/broksum/signal?ticker=PGAS&startDate=2026-04-01&endDate=2026-05-08
+/api/broksum/compare?ticker=PGAS&fromStart=2026-04-01&fromEnd=2026-04-15&toStart=2026-04-16&toEnd=2026-05-08
+/api/broksum/export?type=history&ticker=PGAS&startDate=2026-04-01&endDate=2026-05-08&format=csv
+```
+
+Catatan: endpoint ini membaca broker summary, sehingga sinyal akumulasi/distribusi adalah bukti probabilistik di level broker, bukan bukti final pemilik manfaat.
 
 ## Endpoint screner MAX untuk Custom GPT
 
