@@ -2,10 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "https://eod.maxlong.my.id/api/:path*"
-    },
-    {
       "source": "/files/:path*",
       "destination": "https://eod.maxlong.my.id/files/:path*"
     }
