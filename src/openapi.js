@@ -331,7 +331,8 @@ export function buildOpenApiSchema(baseUrl) {
         get: {
           operationId: 'exportBroksumData',
           summary: 'Export broksum data',
-          description: 'Advanced endpoint for exporting ticker history, broker aggregate, or raw broksum data as CSV or JSON.',
+          description:
+            'Advanced endpoint for exporting ticker history, broker aggregate, or raw broksum data. Use format=file_url for a downloadable CSV URL, format=csv for inline CSV, or format=json for inline JSON.',
           parameters: [
             broksumTickerParam,
             {
@@ -361,8 +362,8 @@ export function buildOpenApiSchema(baseUrl) {
               name: 'format',
               in: 'query',
               required: false,
-              schema: { type: 'string', enum: ['csv', 'json'], default: 'csv' },
-              description: 'Response format.'
+              schema: { type: 'string', enum: ['file_url', 'csv', 'json'], default: 'csv' },
+              description: 'Response format. file_url returns a downloadable CSV URL in openaiFileResponse.'
             },
             broksumLimitParam
           ],

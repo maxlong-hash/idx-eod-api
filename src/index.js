@@ -302,6 +302,35 @@ function buildScreenerDownloadUrl(baseUrl, query, apiKey) {
   return buildProtectedDownloadUrl(baseUrl, '/files/screener-max.csv', filteredQuery, apiKey);
 }
 
+function buildBroksumDownloadUrl(baseUrl, query, apiKey) {
+  const filteredQuery = {};
+  for (const key of [
+    'type',
+    'ticker',
+    'startDate',
+    'endDate',
+    'date',
+    'broker',
+    'transactionType',
+    'investorGroup',
+    'order',
+    'topN',
+    'limit',
+    'sort'
+  ]) {
+    if (query[key] !== undefined && query[key] !== null && query[key] !== '') {
+      filteredQuery[key] = query[key];
+    }
+  }
+
+  return buildProtectedDownloadUrl(baseUrl, '/files/broksum-export.csv', filteredQuery, apiKey);
+}
+
+function safeCsvFilePart(value, fallback = 'broksum') {
+  const normalized = String(value ?? '').trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+  return normalized || fallback;
+}
+
 function addScreenerFreshness(result, store) {
   const latestEodDate = store.getLatestAvailableDate();
   const isStale = Boolean(result.snapshotDate && latestEodDate && result.snapshotDate < latestEodDate);
@@ -417,6 +446,82 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.use(['/api', '/files', '/mcp'], requireDataAuth);
 
+  const getBroksumExportPayload = async (query) => {
+    const type = String(query.type ?? 'history').trim().toLowerCase();
+    if (!['history', 'brokers', 'raw'].includes(type)) {
+      throw new Error('type must be one of history, brokers, or raw');
+    }
+
+    let result;
+    let records;
+    if (type === 'brokers') {
+      result = await broksumStore.getTickerBrokers({
+        ticker: query.ticker,
+        startDate: query.startDate,
+        endDate: query.endDate,
+        broker: query.broker,
+        limit: query.limit,
+        sort: query.sort
+      });
+      records = result.records;
+    } else if (type === 'raw') {
+      result = await broksumStore.getRaw({
+        ticker: query.ticker,
+        date: query.date,
+        broker: query.broker,
+        transactionType: query.transactionType,
+        investorGroup: query.investorGroup,
+        limit: query.limit,
+        sort: query.sort
+      });
+      records = result.records.map((record) => ({
+        ...record,
+        brokerCode: record.broker?.code,
+        brokerName: record.broker?.name
+      }));
+    } else {
+      result = await broksumStore.getTickerHistory({
+        ticker: query.ticker,
+        startDate: query.startDate,
+        endDate: query.endDate,
+        order: query.order,
+        topN: query.topN,
+        limit: query.limit
+      });
+      records = result.records.map((record) => ({
+        ticker: record.ticker,
+        date: record.date,
+        rawRecords: record.rawRecords,
+        brokerCount: record.brokerCount,
+        buyValue: record.buyValue,
+        sellValue: record.sellValue,
+        totalValue: record.totalValue,
+        foreignNetValue: record.foreignNetValue,
+        localNetValue: record.localNetValue,
+        governmentNetValue: record.governmentNetValue,
+        brokerConcentrationPct: record.brokerConcentrationPct,
+        topNetBuyerCode: record.topNetBuyer?.code,
+        topNetBuyerValue: record.topNetBuyer?.netValue,
+        topNetSellerCode: record.topNetSeller?.code,
+        topNetSellerValue: record.topNetSeller?.netValue,
+        signalLabel: record.bandarSignal?.label,
+        signalScore: record.bandarSignal?.score,
+        close: record.eod?.close,
+        changePercent: record.eod?.changePercent,
+        nbsa: record.eod?.nbsa
+      }));
+    }
+
+    return { type, result, records };
+  };
+
+  const buildBroksumExportFilename = (type, result, query) => {
+    const ticker = safeCsvFilePart(query.ticker ?? result.ticker ?? 'broksum');
+    const startDate = safeCsvFilePart(result.startDate ?? query.startDate ?? result.date ?? query.date ?? 'latest', 'latest');
+    const endDate = safeCsvFilePart(result.endDate ?? query.endDate ?? result.date ?? query.date ?? 'latest', 'latest');
+    return `${ticker}_${safeCsvFilePart(type)}_broksum_${startDate}_${endDate}.csv`;
+  };
+
   app.get('/files/eod-history.csv', async (request, response) => {
     try {
       const ticker = String(request.query.ticker ?? '').trim();
@@ -518,6 +623,18 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
       const fileName = `${result.ticker}_ownership_history_${result.startDate}_${result.endDate}.csv`;
       response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       response.type('text/csv; charset=utf-8').send(ownershipStore.serializeHistoryToCsv(result.records));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/files/broksum-export.csv', async (request, response) => {
+    try {
+      const { type, result, records } = await getBroksumExportPayload(request.query);
+      const fileName = buildBroksumExportFilename(type, result, request.query);
+
+      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(records));
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -779,80 +896,37 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/export', async (request, response) => {
     try {
-      const type = String(request.query.type ?? 'history').trim().toLowerCase();
       const format = String(request.query.format ?? 'csv').trim().toLowerCase();
-      if (format !== 'json' && format !== 'csv') {
-        sendError(response, 400, 'format must be json or csv');
+      if (format !== 'json' && format !== 'csv' && format !== 'file_url') {
+        sendError(response, 400, 'format must be one of json, csv, or file_url');
         return;
       }
 
-      let result;
-      let records;
-      if (type === 'brokers') {
-        result = await broksumStore.getTickerBrokers({
-          ticker: request.query.ticker,
-          startDate: request.query.startDate,
-          endDate: request.query.endDate,
-          broker: request.query.broker,
-          limit: request.query.limit,
-          sort: request.query.sort
-        });
-        records = result.records;
-      } else if (type === 'raw') {
-        result = await broksumStore.getRaw({
-          ticker: request.query.ticker,
-          date: request.query.date,
-          broker: request.query.broker,
-          transactionType: request.query.transactionType,
-          investorGroup: request.query.investorGroup,
-          limit: request.query.limit,
-          sort: request.query.sort
-        });
-        records = result.records.map((record) => ({
-          ...record,
-          brokerCode: record.broker?.code,
-          brokerName: record.broker?.name
-        }));
-      } else {
-        result = await broksumStore.getTickerHistory({
-          ticker: request.query.ticker,
-          startDate: request.query.startDate,
-          endDate: request.query.endDate,
-          order: request.query.order,
-          topN: request.query.topN,
-          limit: request.query.limit
-        });
-        records = result.records.map((record) => ({
-          ticker: record.ticker,
-          date: record.date,
-          rawRecords: record.rawRecords,
-          brokerCount: record.brokerCount,
-          buyValue: record.buyValue,
-          sellValue: record.sellValue,
-          totalValue: record.totalValue,
-          foreignNetValue: record.foreignNetValue,
-          localNetValue: record.localNetValue,
-          governmentNetValue: record.governmentNetValue,
-          brokerConcentrationPct: record.brokerConcentrationPct,
-          topNetBuyerCode: record.topNetBuyer?.code,
-          topNetBuyerValue: record.topNetBuyer?.netValue,
-          topNetSellerCode: record.topNetSeller?.code,
-          topNetSellerValue: record.topNetSeller?.netValue,
-          signalLabel: record.bandarSignal?.label,
-          signalScore: record.bandarSignal?.score,
-          close: record.eod?.close,
-          changePercent: record.eod?.changePercent,
-          nbsa: record.eod?.nbsa
-        }));
-      }
+      const { type, result, records } = await getBroksumExportPayload(request.query);
 
       if (format === 'json') {
         response.json({ ...result, exportType: type });
         return;
       }
 
-      const ticker = String(request.query.ticker ?? 'broksum').trim().toUpperCase();
-      response.setHeader('Content-Disposition', `attachment; filename="${ticker}_${type}_broksum.csv"`);
+      if (format === 'file_url') {
+        const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
+        const downloadUrl = buildBroksumDownloadUrl(baseUrl, request.query, options.apiKey);
+        response.json({
+          exportType: type,
+          ticker: result.ticker ?? request.query.ticker ?? null,
+          date: result.date ?? request.query.date ?? null,
+          startDate: result.startDate ?? request.query.startDate ?? null,
+          endDate: result.endDate ?? request.query.endDate ?? null,
+          returned: records.length,
+          downloadUrl,
+          openaiFileResponse: [downloadUrl]
+        });
+        return;
+      }
+
+      const fileName = buildBroksumExportFilename(type, result, request.query);
+      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(records));
     } catch (error) {
       sendError(response, 400, error.message);
