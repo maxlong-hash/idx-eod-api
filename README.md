@@ -140,7 +140,8 @@ Endpoint advanced:
 /api/broksum/export?type=history&ticker=PGAS&startDate=2026-04-01&endDate=2026-05-08&format=file_url
 ```
 
-`/api/broksum/export` mendukung `format=file_url`, `format=csv`, dan `format=json`. Untuk Custom GPT, gunakan `format=file_url` agar GPT menerima URL CSV bertoken sementara lewat `openaiFileResponse`.
+Semua endpoint `/api/broksum/*` mendukung `format=file_url`, `format=csv`, dan `format=json`.
+Untuk Custom GPT, gunakan `format=file_url` agar GPT menerima URL CSV bertoken sementara lewat `openaiFileResponse`.
 
 Catatan: endpoint ini membaca broker summary, sehingga sinyal akumulasi/distribusi adalah bukti probabilistik di level broker, bukan bukti final pemilik manfaat.
 

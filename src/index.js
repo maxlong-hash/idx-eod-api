@@ -42,7 +42,7 @@ function resolveOptions() {
     : path.resolve(process.cwd(), 'data', 'ownership');
   const screenerResultsDir = process.env.SCREENER_MAX_RESULTS_DIR
     ? path.resolve(process.env.SCREENER_MAX_RESULTS_DIR)
-    : path.resolve(process.cwd(), 'screner MAX');
+    : path.resolve(process.cwd(), 'screener-max');
   const broksumDataDir = process.env.BROKSUM_DATA_DIR
     ? path.resolve(process.env.BROKSUM_DATA_DIR)
     : path.resolve(process.cwd(), 'Scrape stockbit', '2023');
@@ -302,8 +302,8 @@ function buildScreenerDownloadUrl(baseUrl, query, apiKey) {
   return buildProtectedDownloadUrl(baseUrl, '/files/screener-max.csv', filteredQuery, apiKey);
 }
 
-function buildBroksumDownloadUrl(baseUrl, query, apiKey) {
-  const filteredQuery = {};
+function buildBroksumDownloadUrl(baseUrl, endpoint, query, apiKey) {
+  const filteredQuery = { endpoint };
   for (const key of [
     'type',
     'ticker',
@@ -313,22 +313,249 @@ function buildBroksumDownloadUrl(baseUrl, query, apiKey) {
     'broker',
     'transactionType',
     'investorGroup',
+    'side',
+    'fromStart',
+    'fromEnd',
+    'toStart',
+    'toEnd',
     'order',
     'topN',
     'limit',
-    'sort'
+    'sort',
+    'includeDaily'
   ]) {
     if (query[key] !== undefined && query[key] !== null && query[key] !== '') {
       filteredQuery[key] = query[key];
     }
   }
 
-  return buildProtectedDownloadUrl(baseUrl, '/files/broksum-export.csv', filteredQuery, apiKey);
+  return buildProtectedDownloadUrl(baseUrl, '/files/broksum.csv', filteredQuery, apiKey);
 }
 
 function safeCsvFilePart(value, fallback = 'broksum') {
   const normalized = String(value ?? '').trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
   return normalized || fallback;
+}
+
+function normalizeOutputFormat(value, defaultFormat = 'json') {
+  const format = String(value ?? defaultFormat).trim().toLowerCase();
+  if (format !== 'json' && format !== 'csv' && format !== 'file_url') {
+    throw new Error('format must be one of json, csv, or file_url');
+  }
+  return format;
+}
+
+function flattenBrokerRecord(record) {
+  return {
+    ...record,
+    brokerCode: record?.code ?? record?.broker?.code ?? null,
+    brokerName: record?.name ?? record?.broker?.name ?? null
+  };
+}
+
+function flattenRawBroksumRecord(record) {
+  return {
+    ...record,
+    brokerCode: record?.broker?.code ?? null,
+    brokerName: record?.broker?.name ?? null
+  };
+}
+
+function flattenBroksumHistoryRecord(record) {
+  return {
+    ticker: record.ticker,
+    date: record.date,
+    rawRecords: record.rawRecords,
+    brokerCount: record.brokerCount,
+    buyVolume: record.buyVolume,
+    sellVolume: record.sellVolume,
+    buyValue: record.buyValue,
+    sellValue: record.sellValue,
+    totalValue: record.totalValue,
+    buyFrequency: record.buyFrequency,
+    sellFrequency: record.sellFrequency,
+    foreignNetValue: record.foreignNetValue,
+    localNetValue: record.localNetValue,
+    governmentNetValue: record.governmentNetValue,
+    foreignNetVolume: record.foreignNetVolume,
+    localNetVolume: record.localNetVolume,
+    governmentNetVolume: record.governmentNetVolume,
+    brokerConcentrationPct: record.brokerConcentrationPct,
+    topNetBuyerCode: record.topNetBuyer?.code,
+    topNetBuyerValue: record.topNetBuyer?.netValue,
+    topNetSellerCode: record.topNetSeller?.code,
+    topNetSellerValue: record.topNetSeller?.netValue,
+    signalLabel: record.bandarSignal?.label,
+    signalScore: record.bandarSignal?.score,
+    close: record.eod?.close,
+    changePercent: record.eod?.changePercent,
+    nbsa: record.eod?.nbsa
+  };
+}
+
+function flattenMarketRankingRecord(record) {
+  return {
+    ticker: record.ticker,
+    date: record.date,
+    close: record.close,
+    changePercent: record.changePercent,
+    totalValue: record.totalValue,
+    foreignNetValue: record.foreignNetValue,
+    localNetValue: record.localNetValue,
+    governmentNetValue: record.governmentNetValue,
+    brokerConcentrationPct: record.brokerConcentrationPct,
+    topNetBuyerCode: record.topNetBuyer?.code,
+    topNetBuyerValue: record.topNetBuyer?.netValue,
+    topNetSellerCode: record.topNetSeller?.code,
+    topNetSellerValue: record.topNetSeller?.netValue,
+    signalLabel: record.bandarSignal?.label,
+    signalScore: record.bandarSignal?.score
+  };
+}
+
+function flattenBroksumSummary(summary) {
+  return {
+    tradingDays: summary?.tradingDays ?? null,
+    rawRecords: summary?.rawRecords ?? null,
+    buyVolume: summary?.buyVolume ?? null,
+    sellVolume: summary?.sellVolume ?? null,
+    buyValue: summary?.buyValue ?? null,
+    sellValue: summary?.sellValue ?? null,
+    totalValue: summary?.totalValue ?? null,
+    foreignNetValue: summary?.foreignNetValue ?? null,
+    localNetValue: summary?.localNetValue ?? null,
+    governmentNetValue: summary?.governmentNetValue ?? null,
+    foreignNetValuePct: summary?.foreignNetValuePct ?? null,
+    firstClose: summary?.firstClose ?? null,
+    latestClose: summary?.latestClose ?? null,
+    priceChangePct: summary?.priceChangePct ?? null
+  };
+}
+
+function broksumAvailabilityRecords(result) {
+  if (!Array.isArray(result.dates)) {
+    return [];
+  }
+  return result.dates.map((item) => {
+    if (typeof item === 'string') {
+      return {
+        ticker: result.ticker ?? null,
+        date: item
+      };
+    }
+    return {
+      date: item?.date ?? null,
+      folder: item?.folder ?? null,
+      files: item?.files ?? null
+    };
+  });
+}
+
+function broksumSignalRecords(result) {
+  const rows = [
+    {
+      section: 'summary',
+      ticker: result.ticker,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      label: result.label,
+      score: result.score,
+      confidence: result.confidence,
+      caveat: result.caveat,
+      ...flattenBroksumSummary(result.summary)
+    }
+  ];
+
+  for (const record of result.topAccumulators ?? []) {
+    rows.push({
+      section: 'top_accumulator',
+      ticker: result.ticker,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      label: result.label,
+      score: result.score,
+      confidence: result.confidence,
+      ...flattenBrokerRecord(record)
+    });
+  }
+
+  for (const record of result.topDistributors ?? []) {
+    rows.push({
+      section: 'top_distributor',
+      ticker: result.ticker,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      label: result.label,
+      score: result.score,
+      confidence: result.confidence,
+      ...flattenBrokerRecord(record)
+    });
+  }
+
+  for (const [index, reason] of (result.reasons ?? []).entries()) {
+    rows.push({
+      section: 'reason',
+      ticker: result.ticker,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      reasonIndex: index + 1,
+      reason
+    });
+  }
+
+  return rows;
+}
+
+function broksumCompareRecords(result) {
+  const rows = [
+    {
+      section: 'from_summary',
+      ticker: result.ticker,
+      startDate: result.from?.startDate,
+      endDate: result.from?.endDate,
+      ...flattenBroksumSummary(result.from?.summary)
+    },
+    {
+      section: 'to_summary',
+      ticker: result.ticker,
+      startDate: result.to?.startDate,
+      endDate: result.to?.endDate,
+      ...flattenBroksumSummary(result.to?.summary)
+    },
+    {
+      section: 'delta',
+      ticker: result.ticker,
+      totalValue: result.delta?.totalValue,
+      foreignNetValue: result.delta?.foreignNetValue,
+      localNetValue: result.delta?.localNetValue,
+      governmentNetValue: result.delta?.governmentNetValue,
+      priceChangePct: result.delta?.priceChangePct
+    }
+  ];
+
+  for (const periodName of ['from', 'to']) {
+    const period = result[periodName];
+    for (const record of period?.summary?.topAccumulators ?? []) {
+      rows.push({
+        section: `${periodName}_top_accumulator`,
+        ticker: result.ticker,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        ...flattenBrokerRecord(record)
+      });
+    }
+    for (const record of period?.summary?.topDistributors ?? []) {
+      rows.push({
+        section: `${periodName}_top_distributor`,
+        ticker: result.ticker,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        ...flattenBrokerRecord(record)
+      });
+    }
+  }
+
+  return rows;
 }
 
 function addScreenerFreshness(result, store) {
@@ -522,6 +749,184 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
     return `${ticker}_${safeCsvFilePart(type)}_broksum_${startDate}_${endDate}.csv`;
   };
 
+  const getBroksumPayload = async (endpoint, query) => {
+    switch (endpoint) {
+      case 'availability': {
+        const result = await broksumStore.getAvailability({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate
+        });
+        return { endpoint, result, records: broksumAvailabilityRecords(result) };
+      }
+
+      case 'raw': {
+        const result = await broksumStore.getRaw({
+          ticker: query.ticker,
+          date: query.date,
+          broker: query.broker,
+          transactionType: query.transactionType,
+          investorGroup: query.investorGroup,
+          limit: query.limit,
+          sort: query.sort
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records.map(flattenRawBroksumRecord)
+        };
+      }
+
+      case 'ticker-history': {
+        const result = await broksumStore.getTickerHistory({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          order: query.order,
+          topN: query.topN,
+          limit: query.limit
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records.map(flattenBroksumHistoryRecord)
+        };
+      }
+
+      case 'ticker-brokers': {
+        const result = await broksumStore.getTickerBrokers({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          broker: query.broker,
+          limit: query.limit,
+          sort: query.sort,
+          includeDaily: query.includeDaily === 'true'
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records.map(flattenBrokerRecord)
+        };
+      }
+
+      case 'market-ranking': {
+        const result = await broksumStore.getMarketRanking({
+          date: query.date,
+          side: query.side,
+          limit: query.limit,
+          topN: query.topN
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records.map(flattenMarketRankingRecord)
+        };
+      }
+
+      case 'broker-history': {
+        const result = await broksumStore.getBrokerHistory({
+          broker: query.broker,
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          limit: query.limit,
+          sort: query.sort
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records.map(flattenBrokerRecord)
+        };
+      }
+
+      case 'signal': {
+        const result = await broksumStore.getSignal({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate
+        });
+        return {
+          endpoint,
+          result,
+          records: broksumSignalRecords(result)
+        };
+      }
+
+      case 'compare': {
+        const result = await broksumStore.compare({
+          ticker: query.ticker,
+          fromStart: query.fromStart,
+          fromEnd: query.fromEnd,
+          toStart: query.toStart,
+          toEnd: query.toEnd
+        });
+        return {
+          endpoint,
+          result,
+          records: broksumCompareRecords(result)
+        };
+      }
+
+      case 'export': {
+        const { type, result, records } = await getBroksumExportPayload(query);
+        return {
+          endpoint: `export-${type}`,
+          result: { ...result, exportType: type },
+          records
+        };
+      }
+
+      default:
+        throw new Error('endpoint must be one of availability, raw, ticker-history, ticker-brokers, market-ranking, broker-history, signal, compare, or export');
+    }
+  };
+
+  const buildBroksumFilename = (endpoint, result, query) => {
+    const ticker = safeCsvFilePart(query.ticker ?? result.ticker ?? result.broker ?? 'broksum');
+    const startDate = safeCsvFilePart(
+      result.startDate ?? result.from?.startDate ?? query.startDate ?? query.fromStart ?? result.date ?? query.date ?? 'latest',
+      'latest'
+    );
+    const endDate = safeCsvFilePart(
+      result.endDate ?? result.to?.endDate ?? query.endDate ?? query.toEnd ?? result.date ?? query.date ?? 'latest',
+      'latest'
+    );
+    return `${ticker}_${safeCsvFilePart(endpoint)}_broksum_${startDate}_${endDate}.csv`;
+  };
+
+  const sendBroksumResponse = async (request, response, endpoint, defaultFormat = 'json') => {
+    const format = normalizeOutputFormat(request.query.format, defaultFormat);
+    const payload = await getBroksumPayload(endpoint, request.query);
+
+    if (format === 'json') {
+      response.json(payload.result);
+      return;
+    }
+
+    if (format === 'file_url') {
+      const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
+      const downloadUrl = buildBroksumDownloadUrl(baseUrl, endpoint, request.query, options.apiKey);
+      response.json({
+        endpoint,
+        ticker: payload.result.ticker ?? request.query.ticker ?? null,
+        broker: payload.result.broker ?? request.query.broker ?? null,
+        date: payload.result.date ?? request.query.date ?? null,
+        startDate: payload.result.startDate ?? payload.result.from?.startDate ?? request.query.startDate ?? request.query.fromStart ?? null,
+        endDate: payload.result.endDate ?? payload.result.to?.endDate ?? request.query.endDate ?? request.query.toEnd ?? null,
+        totalMatches: payload.result.totalMatches ?? payload.result.totalDates ?? null,
+        returned: payload.records.length,
+        downloadUrl,
+        openaiFileResponse: [downloadUrl]
+      });
+      return;
+    }
+
+    const fileName = buildBroksumFilename(payload.endpoint, payload.result, request.query);
+    response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(payload.records));
+  };
+
   app.get('/files/eod-history.csv', async (request, response) => {
     try {
       const ticker = String(request.query.ticker ?? '').trim();
@@ -635,6 +1040,19 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
       response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(records));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/files/broksum.csv', async (request, response) => {
+    try {
+      const endpoint = String(request.query.endpoint ?? '').trim();
+      const payload = await getBroksumPayload(endpoint, request.query);
+      const fileName = buildBroksumFilename(payload.endpoint, payload.result, request.query);
+
+      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(payload.records));
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -783,11 +1201,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/availability', async (request, response) => {
     try {
-      response.json(await broksumStore.getAvailability({
-        ticker: request.query.ticker,
-        startDate: request.query.startDate,
-        endDate: request.query.endDate
-      }));
+      await sendBroksumResponse(request, response, 'availability');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -795,15 +1209,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/raw', async (request, response) => {
     try {
-      response.json(await broksumStore.getRaw({
-        ticker: request.query.ticker,
-        date: request.query.date,
-        broker: request.query.broker,
-        transactionType: request.query.transactionType,
-        investorGroup: request.query.investorGroup,
-        limit: request.query.limit,
-        sort: request.query.sort
-      }));
+      await sendBroksumResponse(request, response, 'raw');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -811,14 +1217,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/ticker/history', async (request, response) => {
     try {
-      response.json(await broksumStore.getTickerHistory({
-        ticker: request.query.ticker,
-        startDate: request.query.startDate,
-        endDate: request.query.endDate,
-        order: request.query.order,
-        topN: request.query.topN,
-        limit: request.query.limit
-      }));
+      await sendBroksumResponse(request, response, 'ticker-history');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -826,15 +1225,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/ticker/brokers', async (request, response) => {
     try {
-      response.json(await broksumStore.getTickerBrokers({
-        ticker: request.query.ticker,
-        startDate: request.query.startDate,
-        endDate: request.query.endDate,
-        broker: request.query.broker,
-        limit: request.query.limit,
-        sort: request.query.sort,
-        includeDaily: request.query.includeDaily === 'true'
-      }));
+      await sendBroksumResponse(request, response, 'ticker-brokers');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -842,12 +1233,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/market/ranking', async (request, response) => {
     try {
-      response.json(await broksumStore.getMarketRanking({
-        date: request.query.date,
-        side: request.query.side,
-        limit: request.query.limit,
-        topN: request.query.topN
-      }));
+      await sendBroksumResponse(request, response, 'market-ranking');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -855,14 +1241,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/broker/history', async (request, response) => {
     try {
-      response.json(await broksumStore.getBrokerHistory({
-        broker: request.query.broker,
-        ticker: request.query.ticker,
-        startDate: request.query.startDate,
-        endDate: request.query.endDate,
-        limit: request.query.limit,
-        sort: request.query.sort
-      }));
+      await sendBroksumResponse(request, response, 'broker-history');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -870,11 +1249,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/signal', async (request, response) => {
     try {
-      response.json(await broksumStore.getSignal({
-        ticker: request.query.ticker,
-        startDate: request.query.startDate,
-        endDate: request.query.endDate
-      }));
+      await sendBroksumResponse(request, response, 'signal');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -882,13 +1257,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/compare', async (request, response) => {
     try {
-      response.json(await broksumStore.compare({
-        ticker: request.query.ticker,
-        fromStart: request.query.fromStart,
-        fromEnd: request.query.fromEnd,
-        toStart: request.query.toStart,
-        toEnd: request.query.toEnd
-      }));
+      await sendBroksumResponse(request, response, 'compare');
     } catch (error) {
       sendError(response, 400, error.message);
     }
@@ -896,38 +1265,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/broksum/export', async (request, response) => {
     try {
-      const format = String(request.query.format ?? 'csv').trim().toLowerCase();
-      if (format !== 'json' && format !== 'csv' && format !== 'file_url') {
-        sendError(response, 400, 'format must be one of json, csv, or file_url');
-        return;
-      }
-
-      const { type, result, records } = await getBroksumExportPayload(request.query);
-
-      if (format === 'json') {
-        response.json({ ...result, exportType: type });
-        return;
-      }
-
-      if (format === 'file_url') {
-        const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
-        const downloadUrl = buildBroksumDownloadUrl(baseUrl, request.query, options.apiKey);
-        response.json({
-          exportType: type,
-          ticker: result.ticker ?? request.query.ticker ?? null,
-          date: result.date ?? request.query.date ?? null,
-          startDate: result.startDate ?? request.query.startDate ?? null,
-          endDate: result.endDate ?? request.query.endDate ?? null,
-          returned: records.length,
-          downloadUrl,
-          openaiFileResponse: [downloadUrl]
-        });
-        return;
-      }
-
-      const fileName = buildBroksumExportFilename(type, result, request.query);
-      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(records));
+      await sendBroksumResponse(request, response, 'export', 'csv');
     } catch (error) {
       sendError(response, 400, error.message);
     }

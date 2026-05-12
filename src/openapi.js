@@ -17,6 +17,9 @@ export function buildOpenApiSchema(baseUrl) {
       content: {
         'application/json': {
           schema: { $ref: '#/components/schemas/BroksumGenericResponse' }
+        },
+        'text/csv': {
+          schema: { type: 'string' }
         }
       }
     }
@@ -69,6 +72,13 @@ export function buildOpenApiSchema(baseUrl) {
     schema: { type: 'integer', default: 5, minimum: 1, maximum: 20 },
     description: 'Number of top net buyer/seller brokers to include.'
   };
+  const broksumFormatParam = (defaultFormat = 'json') => ({
+    name: 'format',
+    in: 'query',
+    required: false,
+    schema: { type: 'string', enum: ['json', 'csv', 'file_url'], default: defaultFormat },
+    description: 'Response format. file_url returns a downloadable CSV URL in openaiFileResponse.'
+  });
 
   return {
     openapi: '3.1.0',
@@ -103,7 +113,8 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Optional ticker to check coverage for.'
             },
             broksumStartDateParam,
-            broksumEndDateParam
+            broksumEndDateParam,
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -125,7 +136,8 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Sort order by date.'
             },
             broksumTopNParam,
-            broksumLimitParam
+            broksumLimitParam,
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -163,7 +175,8 @@ export function buildOpenApiSchema(baseUrl) {
               schema: { type: 'boolean', default: false },
               description: 'Set true to include daily rows for each broker.'
             },
-            broksumLimitParam
+            broksumLimitParam,
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -193,7 +206,8 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Ranking mode.'
             },
             broksumTopNParam,
-            broksumLimitParam
+            broksumLimitParam,
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -233,7 +247,8 @@ export function buildOpenApiSchema(baseUrl) {
               schema: { type: 'string', enum: ['FOREIGN', 'LOCAL', 'GOVERNMENT'] },
               description: 'Optional investor group.'
             },
-            broksumLimitParam
+            broksumLimitParam,
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -270,7 +285,8 @@ export function buildOpenApiSchema(baseUrl) {
               },
               description: 'Sort order.'
             },
-            broksumLimitParam
+            broksumLimitParam,
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -283,7 +299,8 @@ export function buildOpenApiSchema(baseUrl) {
           parameters: [
             broksumTickerParam,
             broksumStartDateParam,
-            broksumEndDateParam
+            broksumEndDateParam,
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -322,7 +339,8 @@ export function buildOpenApiSchema(baseUrl) {
               required: true,
               schema: { type: 'string', format: 'date' },
               description: 'Second period end date.'
-            }
+            },
+            broksumFormatParam()
           ],
           responses: broksumJsonResponse
         }
@@ -358,13 +376,7 @@ export function buildOpenApiSchema(baseUrl) {
               schema: { type: 'string' },
               description: 'Optional broker code filter.'
             },
-            {
-              name: 'format',
-              in: 'query',
-              required: false,
-              schema: { type: 'string', enum: ['file_url', 'csv', 'json'], default: 'csv' },
-              description: 'Response format. file_url returns a downloadable CSV URL in openaiFileResponse.'
-            },
+            broksumFormatParam('csv'),
             broksumLimitParam
           ],
           responses: broksumExportResponse
