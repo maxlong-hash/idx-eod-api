@@ -48,6 +48,9 @@ function resolveOptions() {
     : path.resolve(process.cwd(), 'Scrape stockbit', '2023');
   const apiKey = process.env.API_KEY || process.env.EOD_API_KEY || null;
   const screenerApiKey = process.env.SCREENER_API_KEY || null;
+  const enableActionAuthDebug = ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.ENABLE_ACTION_AUTH_DEBUG ?? '').trim().toLowerCase()
+  );
 
   return {
     transport,
@@ -59,7 +62,8 @@ function resolveOptions() {
     screenerResultsDir,
     broksumDataDir,
     apiKey,
-    screenerApiKey
+    screenerApiKey,
+    enableActionAuthDebug
   };
 }
 
@@ -205,6 +209,42 @@ function hasValidBearerOrApiKey(request, apiKey) {
   const headerToken = request.get?.('x-api-key') ?? null;
 
   return bearerToken === apiKey || headerToken === apiKey;
+}
+
+function inspectActionAuth(request, apiKey, { includeMatch = false } = {}) {
+  const authorization = request.get?.('authorization') ?? '';
+  const xApiKey = request.get?.('x-api-key') ?? '';
+  const authScheme = authorization.trim().split(/\s+/)[0] || null;
+  const bearerToken = authScheme?.toLowerCase() === 'bearer'
+    ? authorization.trim().slice(authScheme.length).trim()
+    : '';
+  const bearerMatches = Boolean(apiKey && bearerToken && safeEqual(bearerToken, apiKey));
+  const xApiKeyMatches = Boolean(apiKey && xApiKey && safeEqual(xApiKey, apiKey));
+
+  return {
+    status: 'ok',
+    diagnostic: 'action-auth',
+    serverHasApiKey: Boolean(apiKey),
+    matchingCheckEnabled: includeMatch,
+    request: {
+      method: request.method,
+      path: request.originalUrl ?? request.url,
+      host: request.get?.('host') ?? null,
+      userAgent: request.get?.('user-agent') ?? null
+    },
+    authorization: {
+      headerPresent: Boolean(authorization),
+      scheme: authScheme,
+      bearerTokenPresent: Boolean(bearerToken),
+      bearerTokenLength: bearerToken.length,
+      xApiKeyHeaderPresent: Boolean(xApiKey),
+      xApiKeyLength: xApiKey.length,
+      matchesConfiguredApiKey: includeMatch ? bearerMatches || xApiKeyMatches : null
+    },
+    note: includeMatch
+      ? 'Temporary diagnostic mode is enabled. No token value is returned.'
+      : 'Set ENABLE_ACTION_AUTH_DEBUG=true on the server to also check whether the token matches the configured API key.'
+  };
 }
 
 function hasValidSignedDownloadToken(request, apiKey) {
@@ -740,6 +780,12 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
   app.get('/openapi.json', async (request, response) => {
     const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
     response.json(buildOpenApiSchema(baseUrl));
+  });
+
+  app.get('/debug/action-auth', async (request, response) => {
+    response.json(inspectActionAuth(request, options.apiKey, {
+      includeMatch: options.enableActionAuthDebug
+    }));
   });
 
   app.use(['/api', '/files', '/mcp'], requireDataAuth);

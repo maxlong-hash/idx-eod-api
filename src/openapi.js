@@ -99,6 +99,57 @@ export function buildOpenApiSchema(baseUrl) {
       }
     ],
     paths: {
+      '/debug/action-auth': {
+        get: {
+          operationId: 'debugActionAuth',
+          summary: 'Debug Custom GPT action authentication',
+          description:
+            'Temporary diagnostic endpoint. Returns whether Authorization Bearer or x-api-key headers reached the server without exposing token values.',
+          responses: {
+            '200': {
+              description: 'Action authentication diagnostic.',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      status: { type: 'string' },
+                      diagnostic: { type: 'string' },
+                      serverHasApiKey: { type: 'boolean' },
+                      matchingCheckEnabled: { type: 'boolean' },
+                      request: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                          method: { type: ['string', 'null'] },
+                          path: { type: ['string', 'null'] },
+                          host: { type: ['string', 'null'] },
+                          userAgent: { type: ['string', 'null'] }
+                        }
+                      },
+                      authorization: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                          headerPresent: { type: 'boolean' },
+                          scheme: { type: ['string', 'null'] },
+                          bearerTokenPresent: { type: 'boolean' },
+                          bearerTokenLength: { type: 'integer' },
+                          xApiKeyHeaderPresent: { type: 'boolean' },
+                          xApiKeyLength: { type: 'integer' },
+                          matchesConfiguredApiKey: { type: ['boolean', 'null'] }
+                        }
+                      },
+                      note: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       '/api/broksum/availability': {
         get: {
           operationId: 'getBroksumAvailability',
