@@ -140,6 +140,17 @@ Endpoint advanced:
 /api/broksum/export?type=history&ticker=PGAS&startDate=2026-04-01&endDate=2026-05-08&format=file_url
 ```
 
+Endpoint trader insight:
+
+```text
+/api/broksum/ticker/insight?ticker=BBCA&startDate=2026-05-12&endDate=2026-05-13
+/api/broksum/ticker/absorption?ticker=BBCA&startDate=2026-05-12&endDate=2026-05-13
+/api/broksum/ticker/rotation?ticker=BBCA&fromStart=2026-05-12&fromEnd=2026-05-12&toStart=2026-05-13&toEnd=2026-05-13
+/api/broksum/market/pressure?date=2026-05-13&mode=absorption&limit=50
+```
+
+`ticker/insight` menggabungkan signal, top accumulator/distributor, absorption, dan bukti bullish/bearish. `ticker/absorption` mencari akumulasi diam-diam saat harga tertahan. `ticker/rotation` membandingkan perubahan perilaku broker antarperiode. `market/pressure` melakukan scan market-wide berdasarkan accumulation, distribution, absorption, churn, foreign, atau value.
+
 Semua endpoint `/api/broksum/*` mendukung `format=file_url`, `format=csv`, dan `format=json`.
 Untuk Custom GPT, gunakan `format=file_url` agar GPT menerima URL CSV bertoken sementara lewat `openaiFileResponse`.
 

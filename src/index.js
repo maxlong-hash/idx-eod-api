@@ -314,10 +314,13 @@ function buildBroksumDownloadUrl(baseUrl, endpoint, query, apiKey) {
     'transactionType',
     'investorGroup',
     'side',
+    'mode',
     'fromStart',
     'fromEnd',
     'toStart',
     'toEnd',
+    'recentDays',
+    'priorDays',
     'order',
     'topN',
     'limit',
@@ -558,6 +561,70 @@ function broksumCompareRecords(result) {
   return rows;
 }
 
+function broksumInsightRecords(result) {
+  const rows = [
+    {
+      section: 'summary',
+      ticker: result.ticker,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      traderBias: result.traderBias,
+      label: result.label,
+      score: result.score,
+      confidence: result.confidence,
+      latestPressureLabel: result.latestPressure?.label ?? null,
+      latestAccumulationScore: result.latestPressure?.accumulationScore ?? null,
+      latestDistributionScore: result.latestPressure?.distributionScore ?? null,
+      latestAbsorptionScore: result.latestPressure?.absorptionScore ?? null,
+      latestChurnScore: result.latestPressure?.churnScore ?? null,
+      absorptionDays: result.absorptionSummary?.absorptionDays ?? null,
+      accumulationDays: result.absorptionSummary?.accumulationDays ?? null,
+      distributionDays: result.absorptionSummary?.distributionDays ?? null,
+      churnDays: result.absorptionSummary?.churnDays ?? null
+    }
+  ];
+
+  for (const record of result.topAccumulators ?? []) {
+    rows.push({
+      section: 'top_accumulator',
+      ticker: result.ticker,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      ...flattenBrokerRecord(record)
+    });
+  }
+
+  for (const record of result.topDistributors ?? []) {
+    rows.push({
+      section: 'top_distributor',
+      ticker: result.ticker,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      ...flattenBrokerRecord(record)
+    });
+  }
+
+  for (const [index, item] of (result.bullishEvidence ?? []).entries()) {
+    rows.push({
+      section: 'bullish_evidence',
+      ticker: result.ticker,
+      evidenceIndex: index + 1,
+      evidence: item
+    });
+  }
+
+  for (const [index, item] of (result.bearishEvidence ?? []).entries()) {
+    rows.push({
+      section: 'bearish_evidence',
+      ticker: result.ticker,
+      evidenceIndex: index + 1,
+      evidence: item
+    });
+  }
+
+  return rows;
+}
+
 function addScreenerFreshness(result, store) {
   const latestEodDate = store.getLatestAvailableDate();
   const isStale = Boolean(result.snapshotDate && latestEodDate && result.snapshotDate < latestEodDate);
@@ -616,6 +683,10 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
         brokerHistory: '/api/broksum/broker/history',
         signal: '/api/broksum/signal',
         compare: '/api/broksum/compare',
+        tickerInsight: '/api/broksum/ticker/insight',
+        tickerAbsorption: '/api/broksum/ticker/absorption',
+        tickerRotation: '/api/broksum/ticker/rotation',
+        marketPressure: '/api/broksum/market/pressure',
         export: '/api/broksum/export'
       },
       authRequiredForDataEndpoints: Boolean(options.apiKey),
@@ -824,6 +895,20 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
         };
       }
 
+      case 'market-pressure': {
+        const result = await broksumStore.getMarketPressure({
+          date: query.date,
+          mode: query.mode,
+          limit: query.limit,
+          topN: query.topN
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records
+        };
+      }
+
       case 'broker-history': {
         const result = await broksumStore.getBrokerHistory({
           broker: query.broker,
@@ -837,6 +922,55 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
           endpoint,
           result,
           records: result.records.map(flattenBrokerRecord)
+        };
+      }
+
+      case 'ticker-absorption': {
+        const result = await broksumStore.getTickerAbsorption({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          order: query.order,
+          limit: query.limit
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records
+        };
+      }
+
+      case 'ticker-rotation': {
+        const result = await broksumStore.getTickerRotation({
+          ticker: query.ticker,
+          fromStart: query.fromStart,
+          fromEnd: query.fromEnd,
+          toStart: query.toStart,
+          toEnd: query.toEnd,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          recentDays: query.recentDays,
+          priorDays: query.priorDays,
+          limit: query.limit,
+          sort: query.sort
+        });
+        return {
+          endpoint,
+          result,
+          records: result.records
+        };
+      }
+
+      case 'ticker-insight': {
+        const result = await broksumStore.getTickerInsight({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate
+        });
+        return {
+          endpoint,
+          result,
+          records: broksumInsightRecords(result)
         };
       }
 
@@ -878,18 +1012,18 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
       }
 
       default:
-        throw new Error('endpoint must be one of availability, raw, ticker-history, ticker-brokers, market-ranking, broker-history, signal, compare, or export');
+        throw new Error('endpoint must be one of availability, raw, ticker-history, ticker-brokers, market-ranking, market-pressure, broker-history, ticker-absorption, ticker-rotation, ticker-insight, signal, compare, or export');
     }
   };
 
   const buildBroksumFilename = (endpoint, result, query) => {
     const ticker = safeCsvFilePart(query.ticker ?? result.ticker ?? result.broker ?? 'broksum');
     const startDate = safeCsvFilePart(
-      result.startDate ?? result.from?.startDate ?? query.startDate ?? query.fromStart ?? result.date ?? query.date ?? 'latest',
+      result.startDate ?? result.fromStart ?? result.from?.startDate ?? query.startDate ?? query.fromStart ?? result.date ?? query.date ?? 'latest',
       'latest'
     );
     const endDate = safeCsvFilePart(
-      result.endDate ?? result.to?.endDate ?? query.endDate ?? query.toEnd ?? result.date ?? query.date ?? 'latest',
+      result.endDate ?? result.toEnd ?? result.to?.endDate ?? query.endDate ?? query.toEnd ?? result.date ?? query.date ?? 'latest',
       'latest'
     );
     return `${ticker}_${safeCsvFilePart(endpoint)}_broksum_${startDate}_${endDate}.csv`;
@@ -912,8 +1046,8 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
         ticker: payload.result.ticker ?? request.query.ticker ?? null,
         broker: payload.result.broker ?? request.query.broker ?? null,
         date: payload.result.date ?? request.query.date ?? null,
-        startDate: payload.result.startDate ?? payload.result.from?.startDate ?? request.query.startDate ?? request.query.fromStart ?? null,
-        endDate: payload.result.endDate ?? payload.result.to?.endDate ?? request.query.endDate ?? request.query.toEnd ?? null,
+        startDate: payload.result.startDate ?? payload.result.fromStart ?? payload.result.from?.startDate ?? request.query.startDate ?? request.query.fromStart ?? null,
+        endDate: payload.result.endDate ?? payload.result.toEnd ?? payload.result.to?.endDate ?? request.query.endDate ?? request.query.toEnd ?? null,
         totalMatches: payload.result.totalMatches ?? payload.result.totalDates ?? null,
         returned: payload.records.length,
         downloadUrl,
@@ -1239,9 +1373,41 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
     }
   });
 
+  app.get('/api/broksum/market/pressure', async (request, response) => {
+    try {
+      await sendBroksumResponse(request, response, 'market-pressure');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
   app.get('/api/broksum/broker/history', async (request, response) => {
     try {
       await sendBroksumResponse(request, response, 'broker-history');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/ticker/absorption', async (request, response) => {
+    try {
+      await sendBroksumResponse(request, response, 'ticker-absorption');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/ticker/rotation', async (request, response) => {
+    try {
+      await sendBroksumResponse(request, response, 'ticker-rotation');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/broksum/ticker/insight', async (request, response) => {
+    try {
+      await sendBroksumResponse(request, response, 'ticker-insight');
     } catch (error) {
       sendError(response, 400, error.message);
     }

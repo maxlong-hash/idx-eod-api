@@ -81,6 +81,23 @@ function pct(value, denominator) {
   return (value / denominator) * 100;
 }
 
+function clamp(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(min, Math.min(max, value));
+}
+
+function average(values) {
+  const numbers = values.filter((value) => Number.isFinite(value));
+  if (numbers.length === 0) {
+    return null;
+  }
+
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
 function createTradeBucket(extra = {}) {
   return {
     ...extra,
@@ -323,6 +340,113 @@ function buildDailyBandarSignal(summary) {
     topBuyerConcentrationPct: round(concentrationBias, 2),
     topSellerConcentrationPct: round(sellerBias, 2)
   };
+}
+
+function buildPressureMetrics(summary, eod = null) {
+  const totalValue = summary.totalValue || 1;
+  const topBuyerValue = summary.topNetBuyer?.netValueAbs ?? 0;
+  const topSellerValue = summary.topNetSeller?.netValueAbs ?? 0;
+  const topBuyerPct = pct(topBuyerValue, totalValue);
+  const topSellerPct = pct(topSellerValue, totalValue);
+  const foreignNetPct = pct(summary.foreignNetValue, totalValue);
+  const priceChangePct = Number(eod?.changePercent ?? 0);
+  const accumulationScore = clamp(
+    topBuyerPct * 1.15 + Math.max(foreignNetPct, 0) - topSellerPct * 0.85 - Math.max(priceChangePct, 0) * 0.5,
+    -100,
+    100
+  );
+  const distributionScore = clamp(
+    topSellerPct * 1.15 + Math.max(-foreignNetPct, 0) - topBuyerPct * 0.85 + Math.max(priceChangePct, 0) * 0.3,
+    -100,
+    100
+  );
+  const absorptionBonus = priceChangePct <= 0 ? Math.min(Math.abs(priceChangePct), 8) : -Math.min(priceChangePct, 6);
+  const absorptionScore = clamp(
+    topBuyerPct + Math.max(foreignNetPct, 0) - topSellerPct * 0.55 + absorptionBonus,
+    -100,
+    100
+  );
+  const churnScore = clamp(Math.min(topBuyerPct, topSellerPct) + Math.abs(foreignNetPct) * 0.35, 0, 100);
+
+  let label = 'NEUTRAL';
+  if (absorptionScore >= 15 && priceChangePct <= 0) {
+    label = 'BUYING_ABSORPTION';
+  } else if (distributionScore >= 18 && accumulationScore >= 14) {
+    label = 'HIGH_CHURN';
+  } else if (accumulationScore >= 15) {
+    label = 'ACCUMULATION_PRESSURE';
+  } else if (distributionScore >= 15) {
+    label = 'DISTRIBUTION_PRESSURE';
+  }
+
+  return {
+    topBuyerPct: round(topBuyerPct, 2),
+    topSellerPct: round(topSellerPct, 2),
+    foreignNetPct: round(foreignNetPct, 2),
+    accumulationScore: round(accumulationScore, 2),
+    distributionScore: round(distributionScore, 2),
+    absorptionScore: round(absorptionScore, 2),
+    churnScore: round(churnScore, 2),
+    label
+  };
+}
+
+function buildPressureRecord(summary, eod = null) {
+  const metrics = buildPressureMetrics(summary, eod);
+  return {
+    ticker: summary.ticker,
+    date: summary.date,
+    close: eod?.close ?? null,
+    changePercent: eod?.changePercent ?? null,
+    totalValue: summary.totalValue,
+    foreignNetValue: summary.foreignNetValue,
+    localNetValue: summary.localNetValue,
+    governmentNetValue: summary.governmentNetValue,
+    brokerConcentrationPct: summary.brokerConcentrationPct,
+    topBuyerCode: summary.topNetBuyer?.code ?? null,
+    topBuyerName: summary.topNetBuyer?.name ?? null,
+    topBuyerNetValue: summary.topNetBuyer?.netValue ?? null,
+    topSellerCode: summary.topNetSeller?.code ?? null,
+    topSellerName: summary.topNetSeller?.name ?? null,
+    topSellerNetValue: summary.topNetSeller?.netValue ?? null,
+    bandarSignalLabel: summary.bandarSignal?.label ?? null,
+    bandarSignalScore: summary.bandarSignal?.score ?? null,
+    ...metrics
+  };
+}
+
+function sortPressureRecords(records, mode) {
+  const copied = records.slice();
+  switch (mode) {
+    case 'distribution':
+      return copied.sort((left, right) => right.distributionScore - left.distributionScore);
+    case 'absorption':
+      return copied.sort((left, right) => right.absorptionScore - left.absorptionScore);
+    case 'foreign':
+      return copied.sort((left, right) => right.foreignNetValue - left.foreignNetValue);
+    case 'churn':
+      return copied.sort((left, right) => right.churnScore - left.churnScore);
+    case 'value':
+      return copied.sort((left, right) => right.totalValue - left.totalValue);
+    case 'accumulation':
+    default:
+      return copied.sort((left, right) => right.accumulationScore - left.accumulationScore);
+  }
+}
+
+function classifyRotation(fromRow, toRow, deltaNetValue) {
+  const fromNet = fromRow?.netValue ?? 0;
+  const toNet = toRow?.netValue ?? 0;
+
+  if (!fromRow && toNet > 0) return 'NEW_ACCUMULATOR';
+  if (!fromRow && toNet < 0) return 'NEW_DISTRIBUTOR';
+  if (fromNet < 0 && toNet > 0) return 'FLIPPED_TO_ACCUMULATION';
+  if (fromNet > 0 && toNet < 0) return 'FLIPPED_TO_DISTRIBUTION';
+  if (toNet > 0 && deltaNetValue > 0) return 'ACCUMULATION_ACCELERATING';
+  if (toNet < 0 && deltaNetValue < 0) return 'DISTRIBUTION_ACCELERATING';
+  if (fromNet > 0 && toNet > 0 && deltaNetValue < 0) return 'ACCUMULATION_FADING';
+  if (fromNet < 0 && toNet < 0 && deltaNetValue > 0) return 'DISTRIBUTION_FADING';
+  return 'MIXED';
 }
 
 function summarizePeriod(rows, brokerRows, eodRows) {
@@ -961,6 +1085,279 @@ export class BroksumDataStore {
       totalMatches: sorted.length,
       returned: Math.min(sorted.length, maxRows),
       records: sorted.slice(0, maxRows)
+    };
+  }
+
+  async getTickerAbsorption({ ticker, startDate, endDate, order = 'asc', limit = null }) {
+    const history = await this.getTickerHistory({ ticker, startDate, endDate, order, topN: 5, limit });
+    const records = history.records.map((row) => buildPressureRecord(row, row.eod));
+    const absorptionDays = records.filter((row) => row.label === 'BUYING_ABSORPTION').length;
+    const accumulationDays = records.filter((row) => row.label === 'ACCUMULATION_PRESSURE').length;
+    const distributionDays = records.filter((row) => row.label === 'DISTRIBUTION_PRESSURE').length;
+    const churnDays = records.filter((row) => row.label === 'HIGH_CHURN').length;
+    const latest = records.at(-1) ?? null;
+
+    return {
+      ticker: normalizeTicker(ticker),
+      startDate: history.startDate,
+      endDate: history.endDate,
+      returned: records.length,
+      summary: {
+        absorptionDays,
+        accumulationDays,
+        distributionDays,
+        churnDays,
+        latestLabel: latest?.label ?? null,
+        avgAccumulationScore: round(average(records.map((row) => row.accumulationScore)), 2),
+        avgDistributionScore: round(average(records.map((row) => row.distributionScore)), 2),
+        avgAbsorptionScore: round(average(records.map((row) => row.absorptionScore)), 2),
+        avgChurnScore: round(average(records.map((row) => row.churnScore)), 2),
+        maxAbsorptionScore: round(Math.max(...records.map((row) => row.absorptionScore), 0), 2)
+      },
+      records
+    };
+  }
+
+  resolveRotationPeriods({ fromStart, fromEnd, toStart, toEnd, startDate, endDate, recentDays, priorDays }) {
+    if (fromStart && fromEnd && toStart && toEnd) {
+      return {
+        fromStart,
+        fromEnd,
+        toStart,
+        toEnd
+      };
+    }
+
+    const dates = this.resolveDates({ startDate, endDate, defaultLatest: false });
+    const recentCount = normalizeLimit(recentDays, 5, 60);
+    const priorCount = normalizeLimit(priorDays, 5, 60);
+    if (dates.length < recentCount + priorCount) {
+      throw new Error(`Need at least ${recentCount + priorCount} broksum dates for automatic rotation periods`);
+    }
+
+    const recentDates = dates.slice(-recentCount);
+    const priorDates = dates.slice(-(recentCount + priorCount), -recentCount);
+    return {
+      fromStart: priorDates[0],
+      fromEnd: priorDates[priorDates.length - 1],
+      toStart: recentDates[0],
+      toEnd: recentDates[recentDates.length - 1]
+    };
+  }
+
+  async getTickerRotation({
+    ticker,
+    fromStart,
+    fromEnd,
+    toStart,
+    toEnd,
+    startDate,
+    endDate,
+    recentDays,
+    priorDays,
+    limit,
+    sort = 'delta_abs_desc'
+  }) {
+    const normalizedTicker = normalizeTicker(ticker);
+    if (!normalizedTicker) {
+      throw new Error('ticker is required');
+    }
+
+    await this.ensureLoaded();
+    const periods = this.resolveRotationPeriods({
+      fromStart,
+      fromEnd,
+      toStart,
+      toEnd,
+      startDate,
+      endDate,
+      recentDays,
+      priorDays
+    });
+    const from = await this.getTickerBrokers({
+      ticker: normalizedTicker,
+      startDate: periods.fromStart,
+      endDate: periods.fromEnd,
+      limit: MAX_LIMIT
+    });
+    const to = await this.getTickerBrokers({
+      ticker: normalizedTicker,
+      startDate: periods.toStart,
+      endDate: periods.toEnd,
+      limit: MAX_LIMIT
+    });
+
+    const fromMap = new Map(from.records.map((row) => [row.code, row]));
+    const toMap = new Map(to.records.map((row) => [row.code, row]));
+    const brokerCodes = new Set([...fromMap.keys(), ...toMap.keys()]);
+    let records = Array.from(brokerCodes).map((code) => {
+      const fromRow = fromMap.get(code) ?? null;
+      const toRow = toMap.get(code) ?? null;
+      const deltaNetValue = (toRow?.netValue ?? 0) - (fromRow?.netValue ?? 0);
+      const deltaNetValuePctOfToValue = pct(deltaNetValue, to.records.reduce((sum, row) => sum + row.buyValue + row.sellValue, 0));
+
+      return {
+        ticker: normalizedTicker,
+        brokerCode: code,
+        brokerName: toRow?.name ?? fromRow?.name ?? '',
+        fromNetValue: fromRow?.netValue ?? 0,
+        toNetValue: toRow?.netValue ?? 0,
+        deltaNetValue,
+        deltaNetValueAbs: Math.abs(deltaNetValue),
+        deltaNetValuePctOfToValue: round(deltaNetValuePctOfToValue, 2),
+        fromStatus: fromRow?.status ?? 'INACTIVE',
+        toStatus: toRow?.status ?? 'INACTIVE',
+        rotationLabel: classifyRotation(fromRow, toRow, deltaNetValue),
+        fromActiveDays: fromRow?.activeDays ?? 0,
+        toActiveDays: toRow?.activeDays ?? 0,
+        fromConsistencyScore: fromRow?.consistencyScore ?? null,
+        toConsistencyScore: toRow?.consistencyScore ?? null,
+        fromBuyAvgPrice: fromRow?.buyAvgPrice ?? null,
+        toBuyAvgPrice: toRow?.buyAvgPrice ?? null,
+        fromSellAvgPrice: fromRow?.sellAvgPrice ?? null,
+        toSellAvgPrice: toRow?.sellAvgPrice ?? null
+      };
+    });
+
+    switch (sort) {
+      case 'delta_desc':
+        records = records.sort((left, right) => right.deltaNetValue - left.deltaNetValue);
+        break;
+      case 'delta_asc':
+        records = records.sort((left, right) => left.deltaNetValue - right.deltaNetValue);
+        break;
+      case 'to_net_desc':
+        records = records.sort((left, right) => right.toNetValue - left.toNetValue);
+        break;
+      case 'to_net_asc':
+        records = records.sort((left, right) => left.toNetValue - right.toNetValue);
+        break;
+      case 'broker_asc':
+        records = records.sort((left, right) => left.brokerCode.localeCompare(right.brokerCode));
+        break;
+      case 'delta_abs_desc':
+      default:
+        records = records.sort((left, right) => right.deltaNetValueAbs - left.deltaNetValueAbs);
+        break;
+    }
+
+    const maxRows = normalizeLimit(limit, 50, MAX_LIMIT);
+    return {
+      ticker: normalizedTicker,
+      ...periods,
+      totalMatches: records.length,
+      returned: Math.min(records.length, maxRows),
+      records: records.slice(0, maxRows)
+    };
+  }
+
+  async getMarketPressure({ date, mode = 'accumulation', limit, topN = 3 }) {
+    await this.ensureLoaded();
+    const normalizedDate = normalizeDateInput(date ?? this.getLatestDate());
+    if (!normalizedDate) {
+      throw new Error('date is required');
+    }
+
+    const dirPath = path.join(this.dataDir, `brokerdata_${normalizedDate}`);
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile() && BROKER_FILE_PATTERN.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+
+    const records = await mapLimit(files, 24, async (fileName) => {
+      const [, ticker] = fileName.match(BROKER_FILE_PATTERN);
+      const data = await this.readTickerDate(ticker, normalizedDate, { missingAsNull: true });
+      if (!data) {
+        return null;
+      }
+      const summary = this.summarizeRecords(ticker, normalizedDate, data.records, {
+        topN: normalizeLimit(topN, 3, 10)
+      });
+      const eodRecord = this.eodStore?.getRecord(ticker, normalizedDate) ?? null;
+      return buildPressureRecord(summary, this.eodStore?.serializeRecord(eodRecord) ?? null);
+    });
+
+    const sorted = sortPressureRecords(records.filter(Boolean), mode);
+    const maxRows = normalizeLimit(limit, 50, MAX_LIMIT);
+    return {
+      date: normalizedDate,
+      mode,
+      totalMatches: sorted.length,
+      returned: Math.min(sorted.length, maxRows),
+      records: sorted.slice(0, maxRows)
+    };
+  }
+
+  async getTickerInsight({ ticker, startDate, endDate }) {
+    const signal = await this.getSignal({ ticker, startDate, endDate });
+    const absorption = await this.getTickerAbsorption({ ticker, startDate, endDate });
+    const brokers = await this.getTickerBrokers({ ticker, startDate, endDate, limit: 10 });
+    const latestPressure = absorption.records.at(-1) ?? null;
+    const topAccumulator = signal.topAccumulators[0] ?? null;
+    const topDistributor = signal.topDistributors[0] ?? null;
+    const bullishEvidence = [];
+    const bearishEvidence = [];
+
+    if (signal.label.includes('ACCUMULATION')) {
+      bullishEvidence.push(`Period signal is ${signal.label} with score ${signal.score}.`);
+    }
+    if (absorption.summary.absorptionDays > 0) {
+      bullishEvidence.push(`${absorption.summary.absorptionDays} day(s) show buying absorption.`);
+    }
+    if (topAccumulator) {
+      bullishEvidence.push(`Top accumulator ${topAccumulator.code} net buy ${topAccumulator.netValue.toLocaleString('en-US')}.`);
+    }
+    if (signal.summary.foreignNetValue > 0) {
+      bullishEvidence.push(`Foreign net buy ${signal.summary.foreignNetValue.toLocaleString('en-US')}.`);
+    }
+
+    if (signal.label.includes('DISTRIBUTION')) {
+      bearishEvidence.push(`Period signal is ${signal.label} with score ${signal.score}.`);
+    }
+    if (absorption.summary.distributionDays > 0) {
+      bearishEvidence.push(`${absorption.summary.distributionDays} day(s) show distribution pressure.`);
+    }
+    if (topDistributor) {
+      bearishEvidence.push(`Top distributor ${topDistributor.code} net sell ${Math.abs(topDistributor.netValue).toLocaleString('en-US')}.`);
+    }
+    if (signal.summary.foreignNetValue < 0) {
+      bearishEvidence.push(`Foreign net sell ${Math.abs(signal.summary.foreignNetValue).toLocaleString('en-US')}.`);
+    }
+
+    let traderBias = 'NEUTRAL';
+    if (signal.score >= 20 || absorption.summary.absorptionDays >= 2) {
+      traderBias = 'ACCUMULATION_WATCH';
+    }
+    if (signal.score <= -20 || absorption.summary.distributionDays >= 2) {
+      traderBias = 'DISTRIBUTION_RISK';
+    }
+    if (bullishEvidence.length > 0 && bearishEvidence.length > 0) {
+      traderBias = 'MIXED_HIGH_ATTENTION';
+    }
+
+    return {
+      ticker: normalizeTicker(ticker),
+      startDate: signal.startDate,
+      endDate: signal.endDate,
+      traderBias,
+      label: signal.label,
+      score: signal.score,
+      confidence: signal.confidence,
+      latestPressure,
+      periodSummary: signal.summary,
+      absorptionSummary: absorption.summary,
+      topAccumulators: signal.topAccumulators,
+      topDistributors: signal.topDistributors,
+      brokerTable: brokers.records,
+      bullishEvidence,
+      bearishEvidence,
+      checklist: [
+        'Compare latest pressure label with price action and support/resistance.',
+        'Check whether top accumulators persist for several days, not just one spike.',
+        'Treat broker flow as probabilistic evidence, not final beneficial ownership.'
+      ],
+      caveat: signal.caveat
     };
   }
 

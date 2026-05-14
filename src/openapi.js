@@ -212,6 +212,38 @@ export function buildOpenApiSchema(baseUrl) {
           responses: broksumJsonResponse
         }
       },
+      '/api/broksum/market/pressure': {
+        get: {
+          operationId: 'getBroksumMarketPressure',
+          summary: 'Scan market pressure from broksum',
+          description:
+            'Trader-oriented market scan for one date. Scores each ticker by accumulation pressure, distribution pressure, buying absorption, churn, foreign flow, or traded value.',
+          parameters: [
+            {
+              name: 'date',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'Trading date YYYY-MM-DD. Defaults to latest available broksum date.'
+            },
+            {
+              name: 'mode',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['accumulation', 'distribution', 'absorption', 'foreign', 'churn', 'value'],
+                default: 'accumulation'
+              },
+              description: 'Pressure ranking mode.'
+            },
+            broksumTopNParam,
+            broksumLimitParam,
+            broksumFormatParam()
+          ],
+          responses: broksumJsonResponse
+        }
+      },
       '/api/broksum/raw': {
         get: {
           operationId: 'getBroksumRaw',
@@ -286,6 +318,113 @@ export function buildOpenApiSchema(baseUrl) {
               description: 'Sort order.'
             },
             broksumLimitParam,
+            broksumFormatParam()
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/ticker/absorption': {
+        get: {
+          operationId: 'getBroksumTickerAbsorption',
+          summary: 'Detect ticker buying absorption',
+          description:
+            'Trader-oriented endpoint that scores daily accumulation, distribution, absorption, and churn for one ticker. Useful to detect quiet accumulation when price is flat or down.',
+          parameters: [
+            broksumTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'order',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['asc', 'desc'], default: 'asc' },
+              description: 'Sort order by date.'
+            },
+            broksumLimitParam,
+            broksumFormatParam()
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/ticker/rotation': {
+        get: {
+          operationId: 'getBroksumTickerRotation',
+          summary: 'Compare broker rotation between periods',
+          description:
+            'Compares broker net flow between two periods for one ticker. Use explicit fromStart/fromEnd/toStart/toEnd, or use recentDays/priorDays with an optional startDate/endDate.',
+          parameters: [
+            broksumTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'fromStart',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'First comparison period start date.'
+            },
+            {
+              name: 'fromEnd',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'First comparison period end date.'
+            },
+            {
+              name: 'toStart',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'Second comparison period start date.'
+            },
+            {
+              name: 'toEnd',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'Second comparison period end date.'
+            },
+            {
+              name: 'recentDays',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', minimum: 1, maximum: 60, default: 5 },
+              description: 'Automatic second-period trading day count.'
+            },
+            {
+              name: 'priorDays',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', minimum: 1, maximum: 60, default: 5 },
+              description: 'Automatic first-period trading day count.'
+            },
+            {
+              name: 'sort',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['delta_abs_desc', 'delta_desc', 'delta_asc', 'to_net_desc', 'to_net_asc', 'broker_asc'],
+                default: 'delta_abs_desc'
+              },
+              description: 'Sort order for broker rotation rows.'
+            },
+            broksumLimitParam,
+            broksumFormatParam()
+          ],
+          responses: broksumJsonResponse
+        }
+      },
+      '/api/broksum/ticker/insight': {
+        get: {
+          operationId: 'getBroksumTickerInsight',
+          summary: 'Get trader-style broksum insight',
+          description:
+            'Combines signal, absorption, broker table, bullish evidence, and bearish evidence into one trader-oriented ticker report.',
+          parameters: [
+            broksumTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
             broksumFormatParam()
           ],
           responses: broksumJsonResponse
