@@ -2,7 +2,9 @@ import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronRigh
 import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { fetchIhsgHistory, fetchTickerHistory, parseWatchlist } from './lib/api';
 import { IDX_UNIVERSE, IDX_UNIVERSE_COUNT } from './lib/idxUniverse';
+import { INDEX_FILTER_OPTIONS, getIndexConstituentCount, getIndexFilterMeta, getIndexMemberSet } from './lib/indexConstituents';
 import { analyzeTicker, DEFAULT_SETTINGS, DEFAULT_WATCHLIST, STRATEGY_OPTIONS } from './lib/maxEngine';
+import type { IndexFilterMode } from './lib/indexConstituents';
 import type { MaxSettings, ScanResult, SignalName, StrategyName } from './lib/types';
 
 type FilterMode = 'signals' | 'all' | 'reversal' | 'momentum' | 'breakout' | 'risk';
@@ -591,6 +593,7 @@ export function App() {
   const [universeMode, setUniverseMode] = useState<UniverseMode>('all-idx');
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [filter, setFilter] = useState<FilterMode>('signals');
+  const [indexFilter, setIndexFilter] = useState<IndexFilterMode>('all');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ScanResult[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
@@ -601,16 +604,25 @@ export function App() {
   const abortRef = useRef<AbortController | null>(null);
   const deferredQuery = useDeferredValue(query);
 
+  const activeIndexMeta = useMemo(() => getIndexFilterMeta(indexFilter), [indexFilter]);
+  const activeIndexCount = useMemo(() => getIndexConstituentCount(indexFilter), [indexFilter]);
+  const activeIndexMembers = useMemo(() => getIndexMemberSet(indexFilter), [indexFilter]);
+
+  const indexFilteredResults = useMemo(() => {
+    if (!activeIndexMembers) return results;
+    return results.filter((item) => activeIndexMembers.has(item.ticker));
+  }, [activeIndexMembers, results]);
+
   const filteredResults = useMemo(() => {
     const needle = deferredQuery.trim().toUpperCase();
-    return results
+    return indexFilteredResults
       .filter((item) => resultMatchesFilter(item, filter))
       .filter((item) => (needle ? item.ticker.includes(needle) || item.signal.includes(needle) : true))
       .sort((a, b) => b.score - a.score);
-  }, [deferredQuery, filter, results]);
+  }, [deferredQuery, filter, indexFilteredResults]);
 
   const selected = useMemo(() => {
-    return results.find((item) => item.ticker === selectedTicker) ?? filteredResults[0] ?? results[0];
+    return filteredResults.find((item) => item.ticker === selectedTicker) ?? filteredResults[0] ?? results[0];
   }, [filteredResults, results, selectedTicker]);
 
   const selectedUniverse = useMemo(() => {
@@ -806,6 +818,25 @@ export function App() {
                 </button>
               ))}
             </div>
+            <label className="index-filter-box">
+              <span>Filter Index</span>
+              <select value={indexFilter} onChange={(event) => setIndexFilter(event.target.value as IndexFilterMode)}>
+                {INDEX_FILTER_OPTIONS.map((option) => {
+                  const count = getIndexConstituentCount(option.value);
+                  return (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                      {count ? ` (${count})` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+              <small>
+                {indexFilter === 'all'
+                  ? 'Tidak membatasi indeks. Semua hasil scan tetap mengikuti filter sinyal di atas.'
+                  : `${activeIndexMeta.description} Muncul ${indexFilteredResults.length}${activeIndexCount ? `/${activeIndexCount}` : ''} ticker dari hasil scan.`}
+              </small>
+            </label>
           </div>
         </section>
 
@@ -841,7 +872,10 @@ export function App() {
           <div className="section-head">
             <div>
               <h2>Scanner Results</h2>
-              <p>{filter === 'signals' ? 'Hanya saham dengan sinyal aktif di candle terbaru.' : 'Mode tampilan mengikuti filter aktif.'}</p>
+              <p>
+                {filter === 'signals' ? 'Hanya saham dengan sinyal aktif di candle terbaru.' : 'Mode tampilan mengikuti filter aktif.'}
+                {indexFilter !== 'all' ? ` Filter indeks: ${activeIndexMeta.label}.` : ''}
+              </p>
             </div>
             <div className="signal-legend">
               {signalLabels.slice(0, 5).map((signal) => (

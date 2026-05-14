@@ -187,7 +187,8 @@ button:disabled {
 .field input:focus,
 .field select:focus,
 .watchlist-box textarea:focus,
-.search-box input:focus {
+.search-box input:focus,
+.index-filter-box select:focus {
   border-color: rgba(0, 229, 255, 0.8);
   box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.12);
 }
@@ -678,6 +679,42 @@ h1 {
   color: var(--cyan);
   border-color: rgba(0, 229, 255, 0.42);
   background: rgba(0, 229, 255, 0.1);
+}
+
+.index-filter-box {
+  display: grid;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid rgba(0, 229, 255, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(0, 229, 255, 0.07), transparent 44%),
+    #0d1016;
+}
+
+.index-filter-box span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.index-filter-box select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #2d3442;
+  border-radius: 7px;
+  background: #111720;
+  color: var(--text);
+  outline: none;
+  padding: 0 10px;
+}
+
+.index-filter-box small {
+  color: var(--muted-2);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .summary-strip {
@@ -1334,6 +1371,7 @@ tbody tr.selected {
   .universe-switch button,
   .filter-chips button,
   .search-box,
+  .index-filter-box select,
   .field input,
   .field select {
     min-height: 44px;
