@@ -6,6 +6,14 @@ const BROKER_FILE_PATTERN = /^([A-Z0-9-]+)_brokerdata\.json$/i;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 1000;
 const LOT_SIZE = 100;
+const DEFAULT_BANDAR_TOP_N = 3;
+const NET_FOREIGN_PERIODS = {
+  '1w': 5,
+  '1m': 20,
+  '3m': 60,
+  '6m': 120,
+  '1y': 240
+};
 
 function pad2(value) {
   return String(value).padStart(2, '0');
@@ -96,6 +104,75 @@ function average(values) {
   }
 
   return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
+function sumValues(values) {
+  return values.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+}
+
+function normalizeBandarmologyWindow(value, allowed, defaultWindow) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return defaultWindow;
+  }
+  const window = Math.floor(parsed);
+  return allowed.includes(window) ? window : defaultWindow;
+}
+
+function normalizeNetForeignPeriod(value) {
+  const period = String(value ?? '1m').trim().toLowerCase();
+  return period === 'ytd' || Object.prototype.hasOwnProperty.call(NET_FOREIGN_PERIODS, period) ? period : '1m';
+}
+
+function movingAverageAt(records, index, key, window) {
+  const start = Math.max(0, index - window + 1);
+  const slice = records.slice(start, index + 1).map((record) => record[key]);
+  return slice.length >= window ? round(average(slice), 2) : null;
+}
+
+function rollingSumAt(records, index, key, window) {
+  const start = Math.max(0, index - window + 1);
+  const slice = records.slice(start, index + 1).map((record) => record[key]);
+  return {
+    value: sumValues(slice),
+    days: slice.length,
+    isComplete: slice.length >= window
+  };
+}
+
+function ytdSumAt(records, index, key) {
+  const row = records[index];
+  const year = row?.date?.slice(0, 4);
+  const slice = records.slice(0, index + 1).filter((record) => record.date?.startsWith(year));
+  return {
+    value: sumValues(slice.map((record) => record[key])),
+    days: slice.length,
+    isComplete: true
+  };
+}
+
+function buildNetForeignStreak(records, index) {
+  let buyStreak = 0;
+  let sellStreak = 0;
+  for (let cursor = index; cursor >= 0; cursor -= 1) {
+    const value = records[cursor]?.netForeignValue ?? 0;
+    if (value > 0 && sellStreak === 0) {
+      buyStreak += 1;
+      continue;
+    }
+    if (value < 0 && buyStreak === 0) {
+      sellStreak += 1;
+      continue;
+    }
+    break;
+  }
+
+  return {
+    buyStreak,
+    sellStreak,
+    side: buyStreak > 0 ? 'BUY' : sellStreak > 0 ? 'SELL' : 'FLAT',
+    length: Math.max(buyStreak, sellStreak)
+  };
 }
 
 function createTradeBucket(extra = {}) {
@@ -917,6 +994,256 @@ export class BroksumDataStore {
       endDate: rows[rows.length - 1]?.date ?? null,
       returned: rows.length,
       records: rows
+    };
+  }
+
+  async getBandarmologyFactors({ ticker, startDate, endDate, topN = DEFAULT_BANDAR_TOP_N } = {}) {
+    await this.ensureLoaded();
+    const normalizedTicker = normalizeTicker(ticker);
+    if (!normalizedTicker) {
+      throw new Error('ticker is required');
+    }
+
+    const effectiveTopN = normalizeLimit(topN, DEFAULT_BANDAR_TOP_N, 10);
+    const dates = this.resolveDates({ startDate, endDate, defaultLatest: false });
+    const records = [];
+    let foreignFlowValue = 0;
+
+    for (const date of dates) {
+      const data = await this.readTickerDate(normalizedTicker, date, { missingAsNull: true });
+      if (!data) {
+        continue;
+      }
+
+      const summary = this.summarizeRecords(normalizedTicker, date, data.records, {
+        topN: Math.max(5, effectiveTopN)
+      });
+      const eodRecord = this.eodStore?.getRecord(normalizedTicker, date) ?? null;
+      const topBuyers = summary.topNetBuyers.slice(0, effectiveTopN);
+      const topSellers = summary.topNetSellers.slice(0, effectiveTopN);
+      const topBuyerValue = sumValues(topBuyers.map((row) => row.netValue));
+      const topSellerValueAbs = sumValues(topSellers.map((row) => row.netValueAbs));
+      const bandarValue = topBuyerValue - topSellerValueAbs;
+      foreignFlowValue += summary.foreignNetValue;
+
+      records.push({
+        ticker: normalizedTicker,
+        date,
+        close: eodRecord?.close ?? null,
+        changePercent: eodRecord?.changePercent ?? null,
+        totalValue: summary.totalValue,
+        netForeignValue: summary.foreignNetValue,
+        foreignBuyValue: summary.investorGroups.FOREIGN?.buyValue ?? 0,
+        foreignSellValue: summary.investorGroups.FOREIGN?.sellValue ?? 0,
+        foreignFlowValue,
+        topN: effectiveTopN,
+        topBuyerValue,
+        topSellerValueAbs,
+        bandarValue,
+        bandarSide: bandarValue > 0 ? 'ACCUMULATION' : bandarValue < 0 ? 'DISTRIBUTION' : 'NEUTRAL',
+        brokerConcentrationPct: summary.brokerConcentrationPct,
+        topNetBuyers: topBuyers,
+        topNetSellers: topSellers
+      });
+    }
+
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      const streak = buildNetForeignStreak(records, index);
+      record.foreignFlowMa20 = movingAverageAt(records, index, 'foreignFlowValue', 20);
+      record.foreignFlowMa50 = movingAverageAt(records, index, 'foreignFlowValue', 50);
+      record.netForeignMa10 = movingAverageAt(records, index, 'netForeignValue', 10);
+      record.netForeignMa20 = movingAverageAt(records, index, 'netForeignValue', 20);
+      record.netForeignBuyStreak = streak.buyStreak;
+      record.netForeignSellStreak = streak.sellStreak;
+      record.netForeignStreakSide = streak.side;
+      record.netForeignStreakLength = streak.length;
+      record.bandarValueMa10 = movingAverageAt(records, index, 'bandarValue', 10);
+      record.bandarValueMa20 = movingAverageAt(records, index, 'bandarValue', 20);
+      record.previousDate = records[index - 1]?.date ?? null;
+      record.previousBandarValue = records[index - 1]?.bandarValue ?? null;
+      record.bandarValueChange = record.previousBandarValue === null ? null : record.bandarValue - record.previousBandarValue;
+    }
+
+    const latest = records.at(-1) ?? null;
+    return {
+      ticker: normalizedTicker,
+      startDate: records[0]?.date ?? null,
+      endDate: latest?.date ?? null,
+      topN: effectiveTopN,
+      returned: records.length,
+      latest,
+      ranges: latest ? this.buildNetForeignRangeMetrics(records, records.length - 1) : {},
+      records
+    };
+  }
+
+  buildNetForeignRangeMetrics(records, index) {
+    const metrics = {};
+    for (const [period, window] of Object.entries(NET_FOREIGN_PERIODS)) {
+      const result = rollingSumAt(records, index, 'netForeignValue', window);
+      metrics[period] = {
+        period,
+        window,
+        netForeignFlow: result.value,
+        days: result.days,
+        isComplete: result.isComplete
+      };
+    }
+
+    const ytd = ytdSumAt(records, index, 'netForeignValue');
+    metrics.ytd = {
+      period: 'ytd',
+      window: null,
+      netForeignFlow: ytd.value,
+      days: ytd.days,
+      isComplete: ytd.isComplete
+    };
+    return metrics;
+  }
+
+  async getForeignFlowMa({ ticker, startDate, endDate, window = 20, topN } = {}) {
+    const effectiveWindow = normalizeBandarmologyWindow(window, [20, 50], 20);
+    const factors = await this.getBandarmologyFactors({ ticker, startDate, endDate, topN });
+    const records = factors.records.map((record) => ({
+      ticker: record.ticker,
+      date: record.date,
+      netForeignValue: record.netForeignValue,
+      foreignFlowValue: record.foreignFlowValue,
+      window: effectiveWindow,
+      foreignFlowMa: record[`foreignFlowMa${effectiveWindow}`]
+    }));
+    return {
+      ticker: factors.ticker,
+      startDate: factors.startDate,
+      endDate: factors.endDate,
+      window: effectiveWindow,
+      returned: records.length,
+      latest: records.at(-1) ?? null,
+      records
+    };
+  }
+
+  async getNetForeignMa({ ticker, startDate, endDate, window = 10, topN } = {}) {
+    const effectiveWindow = normalizeBandarmologyWindow(window, [10, 20], 10);
+    const factors = await this.getBandarmologyFactors({ ticker, startDate, endDate, topN });
+    const records = factors.records.map((record) => ({
+      ticker: record.ticker,
+      date: record.date,
+      netForeignValue: record.netForeignValue,
+      window: effectiveWindow,
+      netForeignMa: record[`netForeignMa${effectiveWindow}`]
+    }));
+    return {
+      ticker: factors.ticker,
+      startDate: factors.startDate,
+      endDate: factors.endDate,
+      window: effectiveWindow,
+      returned: records.length,
+      latest: records.at(-1) ?? null,
+      records
+    };
+  }
+
+  async getNetForeignStreak({ ticker, startDate, endDate, topN } = {}) {
+    const factors = await this.getBandarmologyFactors({ ticker, startDate, endDate, topN });
+    const records = factors.records.map((record) => ({
+      ticker: record.ticker,
+      date: record.date,
+      netForeignValue: record.netForeignValue,
+      netForeignBuyStreak: record.netForeignBuyStreak,
+      netForeignSellStreak: record.netForeignSellStreak,
+      netForeignStreakSide: record.netForeignStreakSide,
+      netForeignStreakLength: record.netForeignStreakLength
+    }));
+    return {
+      ticker: factors.ticker,
+      startDate: factors.startDate,
+      endDate: factors.endDate,
+      returned: records.length,
+      latest: records.at(-1) ?? null,
+      records
+    };
+  }
+
+  async getNetForeignFlow({ ticker, startDate, endDate, period = '1m', topN } = {}) {
+    const effectivePeriod = normalizeNetForeignPeriod(period);
+    const factors = await this.getBandarmologyFactors({ ticker, startDate, endDate, topN });
+    if (factors.records.length === 0) {
+      return {
+        ticker: factors.ticker,
+        startDate: null,
+        endDate: null,
+        period: effectivePeriod,
+        netForeignFlow: 0,
+        days: 0,
+        isComplete: false,
+        records: []
+      };
+    }
+
+    const latestIndex = factors.records.length - 1;
+    const range = effectivePeriod === 'ytd'
+      ? ytdSumAt(factors.records, latestIndex, 'netForeignValue')
+      : rollingSumAt(factors.records, latestIndex, 'netForeignValue', NET_FOREIGN_PERIODS[effectivePeriod]);
+    const selectedRecords = effectivePeriod === 'ytd'
+      ? factors.records.filter((record) => record.date?.startsWith(factors.endDate.slice(0, 4)))
+      : factors.records.slice(Math.max(0, factors.records.length - NET_FOREIGN_PERIODS[effectivePeriod]));
+
+    return {
+      ticker: factors.ticker,
+      startDate: selectedRecords[0]?.date ?? null,
+      endDate: factors.endDate,
+      period: effectivePeriod,
+      window: NET_FOREIGN_PERIODS[effectivePeriod] ?? null,
+      netForeignFlow: range.value,
+      days: range.days,
+      isComplete: range.isComplete,
+      records: selectedRecords.map((record) => ({
+        ticker: record.ticker,
+        date: record.date,
+        netForeignValue: record.netForeignValue
+      }))
+    };
+  }
+
+  async getBandarValueMa({ ticker, startDate, endDate, window = 10, topN } = {}) {
+    const effectiveWindow = normalizeBandarmologyWindow(window, [10, 20], 10);
+    const factors = await this.getBandarmologyFactors({ ticker, startDate, endDate, topN });
+    const records = factors.records.map((record) => ({
+      ticker: record.ticker,
+      date: record.date,
+      bandarValue: record.bandarValue,
+      bandarSide: record.bandarSide,
+      window: effectiveWindow,
+      bandarValueMa: record[`bandarValueMa${effectiveWindow}`]
+    }));
+    return {
+      ticker: factors.ticker,
+      startDate: factors.startDate,
+      endDate: factors.endDate,
+      window: effectiveWindow,
+      topN: factors.topN,
+      returned: records.length,
+      latest: records.at(-1) ?? null,
+      records
+    };
+  }
+
+  async getPreviousBandarValue({ ticker, date, startDate, endDate, topN } = {}) {
+    const factors = await this.getBandarmologyFactors({ ticker, startDate, endDate: date ?? endDate, topN });
+    const targetDate = normalizeDateInput(date);
+    const target = targetDate
+      ? factors.records.find((record) => record.date === targetDate)
+      : factors.records.at(-1);
+    return {
+      ticker: factors.ticker,
+      date: target?.date ?? targetDate ?? factors.endDate,
+      previousDate: target?.previousDate ?? null,
+      bandarValue: target?.bandarValue ?? null,
+      previousBandarValue: target?.previousBandarValue ?? null,
+      bandarValueChange: target?.bandarValueChange ?? null,
+      topN: factors.topN
     };
   }
 

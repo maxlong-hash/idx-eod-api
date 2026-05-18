@@ -375,6 +375,25 @@ function buildBroksumDownloadUrl(baseUrl, endpoint, query, apiKey) {
   return buildProtectedDownloadUrl(baseUrl, '/files/broksum.csv', filteredQuery, apiKey);
 }
 
+function buildBandarmologyDownloadUrl(baseUrl, endpoint, query, apiKey) {
+  const filteredQuery = { endpoint };
+  for (const key of [
+    'ticker',
+    'startDate',
+    'endDate',
+    'date',
+    'window',
+    'period',
+    'topN'
+  ]) {
+    if (query[key] !== undefined && query[key] !== null && query[key] !== '') {
+      filteredQuery[key] = query[key];
+    }
+  }
+
+  return buildProtectedDownloadUrl(baseUrl, '/files/bandarmology.csv', filteredQuery, apiKey);
+}
+
 function safeCsvFilePart(value, fallback = 'broksum') {
   const normalized = String(value ?? '').trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
   return normalized || fallback;
@@ -601,6 +620,10 @@ function broksumCompareRecords(result) {
   return rows;
 }
 
+function bandarmologyRecords(result) {
+  return Array.isArray(result.records) ? result.records : [result];
+}
+
 function broksumInsightRecords(result) {
   const rows = [
     {
@@ -728,6 +751,15 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
         tickerRotation: '/api/broksum/ticker/rotation',
         marketPressure: '/api/broksum/market/pressure',
         export: '/api/broksum/export'
+      },
+      bandarmologyEndpoints: {
+        factors: '/api/bandarmology/ticker/factors',
+        foreignFlowMa: '/api/bandarmology/foreign-flow-ma',
+        netForeignMa: '/api/bandarmology/net-foreign-ma',
+        netForeignStreak: '/api/bandarmology/net-foreign-streak',
+        netForeignFlow: '/api/bandarmology/net-foreign-flow',
+        bandarValueMa: '/api/bandarmology/bandar-value-ma',
+        previousBandarValue: '/api/bandarmology/previous-bandar-value'
       },
       authRequiredForDataEndpoints: Boolean(options.apiKey),
       ownershipEndpoints: {
@@ -1062,6 +1094,88 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
     }
   };
 
+  const getBandarmologyPayload = async (endpoint, query) => {
+    switch (endpoint) {
+      case 'factors': {
+        const result = await broksumStore.getBandarmologyFactors({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          topN: query.topN
+        });
+        return { endpoint, result, records: bandarmologyRecords(result) };
+      }
+
+      case 'foreign-flow-ma': {
+        const result = await broksumStore.getForeignFlowMa({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          window: query.window,
+          topN: query.topN
+        });
+        return { endpoint, result, records: bandarmologyRecords(result) };
+      }
+
+      case 'net-foreign-ma': {
+        const result = await broksumStore.getNetForeignMa({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          window: query.window,
+          topN: query.topN
+        });
+        return { endpoint, result, records: bandarmologyRecords(result) };
+      }
+
+      case 'net-foreign-streak': {
+        const result = await broksumStore.getNetForeignStreak({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          topN: query.topN
+        });
+        return { endpoint, result, records: bandarmologyRecords(result) };
+      }
+
+      case 'net-foreign-flow': {
+        const result = await broksumStore.getNetForeignFlow({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          period: query.period,
+          topN: query.topN
+        });
+        return { endpoint, result, records: bandarmologyRecords(result) };
+      }
+
+      case 'bandar-value-ma': {
+        const result = await broksumStore.getBandarValueMa({
+          ticker: query.ticker,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          window: query.window,
+          topN: query.topN
+        });
+        return { endpoint, result, records: bandarmologyRecords(result) };
+      }
+
+      case 'previous-bandar-value': {
+        const result = await broksumStore.getPreviousBandarValue({
+          ticker: query.ticker,
+          date: query.date,
+          startDate: query.startDate,
+          endDate: query.endDate,
+          topN: query.topN
+        });
+        return { endpoint, result, records: bandarmologyRecords(result) };
+      }
+
+      default:
+        throw new Error('endpoint must be one of factors, foreign-flow-ma, net-foreign-ma, net-foreign-streak, net-foreign-flow, bandar-value-ma, or previous-bandar-value');
+    }
+  };
+
   const buildBroksumFilename = (endpoint, result, query) => {
     const ticker = safeCsvFilePart(query.ticker ?? result.ticker ?? result.broker ?? 'broksum');
     const startDate = safeCsvFilePart(
@@ -1073,6 +1187,13 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
       'latest'
     );
     return `${ticker}_${safeCsvFilePart(endpoint)}_broksum_${startDate}_${endDate}.csv`;
+  };
+
+  const buildBandarmologyFilename = (endpoint, result, query) => {
+    const ticker = safeCsvFilePart(query.ticker ?? result.ticker ?? 'bandarmology');
+    const startDate = safeCsvFilePart(result.startDate ?? query.startDate ?? result.date ?? query.date ?? 'latest', 'latest');
+    const endDate = safeCsvFilePart(result.endDate ?? query.endDate ?? result.date ?? query.date ?? 'latest', 'latest');
+    return `${ticker}_${safeCsvFilePart(endpoint)}_bandarmology_${startDate}_${endDate}.csv`;
   };
 
   const sendBroksumResponse = async (request, response, endpoint, defaultFormat = 'json') => {
@@ -1103,6 +1224,38 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
     }
 
     const fileName = buildBroksumFilename(payload.endpoint, payload.result, request.query);
+    response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(payload.records));
+  };
+
+  const sendBandarmologyResponse = async (request, response, endpoint, defaultFormat = 'json') => {
+    const format = normalizeOutputFormat(request.query.format, defaultFormat);
+    const payload = await getBandarmologyPayload(endpoint, request.query);
+
+    if (format === 'json') {
+      response.json(payload.result);
+      return;
+    }
+
+    if (format === 'file_url') {
+      const baseUrl = getRequestBaseUrl(request, options.publicBaseUrl);
+      const downloadUrl = buildBandarmologyDownloadUrl(baseUrl, endpoint, request.query, options.apiKey);
+      response.json({
+        endpoint,
+        ticker: payload.result.ticker ?? request.query.ticker ?? null,
+        date: payload.result.date ?? request.query.date ?? null,
+        startDate: payload.result.startDate ?? request.query.startDate ?? null,
+        endDate: payload.result.endDate ?? request.query.endDate ?? null,
+        window: payload.result.window ?? request.query.window ?? null,
+        period: payload.result.period ?? request.query.period ?? null,
+        returned: payload.records.length,
+        downloadUrl,
+        openaiFileResponse: [downloadUrl]
+      });
+      return;
+    }
+
+    const fileName = buildBandarmologyFilename(payload.endpoint, payload.result, request.query);
     response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(payload.records));
   };
@@ -1230,6 +1383,19 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
       const endpoint = String(request.query.endpoint ?? '').trim();
       const payload = await getBroksumPayload(endpoint, request.query);
       const fileName = buildBroksumFilename(payload.endpoint, payload.result, request.query);
+
+      response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(payload.records));
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/files/bandarmology.csv', async (request, response) => {
+    try {
+      const endpoint = String(request.query.endpoint ?? '').trim();
+      const payload = await getBandarmologyPayload(endpoint, request.query);
+      const fileName = buildBandarmologyFilename(payload.endpoint, payload.result, request.query);
 
       response.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       response.type('text/csv; charset=utf-8').send(serializeGenericRecordsToCsv(payload.records));
@@ -1374,6 +1540,62 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
       }
 
       response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/bandarmology/ticker/factors', async (request, response) => {
+    try {
+      await sendBandarmologyResponse(request, response, 'factors');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/bandarmology/foreign-flow-ma', async (request, response) => {
+    try {
+      await sendBandarmologyResponse(request, response, 'foreign-flow-ma');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/bandarmology/net-foreign-ma', async (request, response) => {
+    try {
+      await sendBandarmologyResponse(request, response, 'net-foreign-ma');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/bandarmology/net-foreign-streak', async (request, response) => {
+    try {
+      await sendBandarmologyResponse(request, response, 'net-foreign-streak');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/bandarmology/net-foreign-flow', async (request, response) => {
+    try {
+      await sendBandarmologyResponse(request, response, 'net-foreign-flow');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/bandarmology/bandar-value-ma', async (request, response) => {
+    try {
+      await sendBandarmologyResponse(request, response, 'bandar-value-ma');
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/bandarmology/previous-bandar-value', async (request, response) => {
+    try {
+      await sendBandarmologyResponse(request, response, 'previous-bandar-value');
     } catch (error) {
       sendError(response, 400, error.message);
     }

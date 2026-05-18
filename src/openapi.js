@@ -79,6 +79,34 @@ export function buildOpenApiSchema(baseUrl) {
     schema: { type: 'string', enum: ['json', 'csv', 'file_url'], default: defaultFormat },
     description: 'Response format. file_url returns a downloadable CSV URL in openaiFileResponse.'
   });
+  const bandarmologyJsonResponse = {
+    '200': {
+      description: 'Bandarmology factor response.',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/BandarmologyGenericResponse' }
+        },
+        'text/csv': {
+          schema: { type: 'string' }
+        }
+      }
+    }
+  };
+  const bandarmologyTickerParam = {
+    name: 'ticker',
+    in: 'query',
+    required: true,
+    schema: { type: 'string' },
+    description: 'Stock ticker, for example BBCA or PGAS.'
+  };
+  const bandarmologyTopNParam = {
+    name: 'topN',
+    in: 'query',
+    required: false,
+    schema: { type: 'integer', default: 3, minimum: 1, maximum: 10 },
+    description: 'Number of top net buyer and seller brokers used to calculate Bandar Value.'
+  };
+  const bandarmologyFormatParam = broksumFormatParam;
 
   return {
     openapi: '3.1.0',
@@ -148,6 +176,153 @@ export function buildOpenApiSchema(baseUrl) {
               }
             }
           }
+        }
+      },
+      '/api/bandarmology/ticker/factors': {
+        get: {
+          operationId: 'getBandarmologyTickerFactors',
+          summary: 'Get all ticker bandarmology factors',
+          description:
+            'Returns daily foreign flow, net foreign MA10/MA20, foreign flow MA20/MA50, net foreign streak, Bandar Value MA10/MA20, previous Bandar Value, and range net foreign flow metrics.',
+          parameters: [
+            bandarmologyTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            bandarmologyTopNParam,
+            bandarmologyFormatParam()
+          ],
+          responses: bandarmologyJsonResponse
+        }
+      },
+      '/api/bandarmology/foreign-flow-ma': {
+        get: {
+          operationId: 'getBandarmologyForeignFlowMa',
+          summary: 'Get Foreign Flow moving average',
+          description:
+            'Returns cumulative Foreign Flow and its moving average. Use window=20 for Foreign Flow MA20 or window=50 for Foreign Flow MA50.',
+          parameters: [
+            bandarmologyTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'window',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', enum: [20, 50], default: 20 },
+              description: 'Moving average window. Allowed values: 20 or 50.'
+            },
+            bandarmologyTopNParam,
+            bandarmologyFormatParam()
+          ],
+          responses: bandarmologyJsonResponse
+        }
+      },
+      '/api/bandarmology/net-foreign-ma': {
+        get: {
+          operationId: 'getBandarmologyNetForeignMa',
+          summary: 'Get Net Foreign moving average',
+          description:
+            'Returns daily Net Foreign Buy/Sell and its moving average. Use window=10 for MA10 or window=20 for MA20.',
+          parameters: [
+            bandarmologyTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'window',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', enum: [10, 20], default: 10 },
+              description: 'Moving average window. Allowed values: 10 or 20.'
+            },
+            bandarmologyTopNParam,
+            bandarmologyFormatParam()
+          ],
+          responses: bandarmologyJsonResponse
+        }
+      },
+      '/api/bandarmology/net-foreign-streak': {
+        get: {
+          operationId: 'getBandarmologyNetForeignStreak',
+          summary: 'Get Net Foreign buy or sell streak',
+          description:
+            'Returns daily Net Foreign Buy Streak and Net Foreign Sell Streak for one ticker.',
+          parameters: [
+            bandarmologyTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            bandarmologyTopNParam,
+            bandarmologyFormatParam()
+          ],
+          responses: bandarmologyJsonResponse
+        }
+      },
+      '/api/bandarmology/net-foreign-flow': {
+        get: {
+          operationId: 'getBandarmologyNetForeignFlow',
+          summary: 'Get period Net Foreign Flow',
+          description:
+            'Returns summed Net Foreign Flow for one period. Supported period values: 1w, 1m, 3m, 6m, 1y, or ytd.',
+          parameters: [
+            bandarmologyTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'period',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', enum: ['1w', '1m', '3m', '6m', '1y', 'ytd'], default: '1m' },
+              description: 'Period to sum Net Foreign Flow.'
+            },
+            bandarmologyTopNParam,
+            bandarmologyFormatParam()
+          ],
+          responses: bandarmologyJsonResponse
+        }
+      },
+      '/api/bandarmology/bandar-value-ma': {
+        get: {
+          operationId: 'getBandarmologyBandarValueMa',
+          summary: 'Get Bandar Value moving average',
+          description:
+            'Returns Bandar Value and its moving average. Bandar Value is top N net buyer value minus top N net seller absolute value. Use window=10 or window=20.',
+          parameters: [
+            bandarmologyTickerParam,
+            broksumStartDateParam,
+            broksumEndDateParam,
+            {
+              name: 'window',
+              in: 'query',
+              required: false,
+              schema: { type: 'integer', enum: [10, 20], default: 10 },
+              description: 'Moving average window. Allowed values: 10 or 20.'
+            },
+            bandarmologyTopNParam,
+            bandarmologyFormatParam()
+          ],
+          responses: bandarmologyJsonResponse
+        }
+      },
+      '/api/bandarmology/previous-bandar-value': {
+        get: {
+          operationId: 'getBandarmologyPreviousBandarValue',
+          summary: 'Get previous Bandar Value',
+          description:
+            'Returns the target date Bandar Value, previous trading date Bandar Value, and the change between them.',
+          parameters: [
+            bandarmologyTickerParam,
+            {
+              name: 'date',
+              in: 'query',
+              required: false,
+              schema: { type: 'string', format: 'date' },
+              description: 'Target trading date. Defaults to latest available date in the selected range.'
+            },
+            broksumStartDateParam,
+            broksumEndDateParam,
+            bandarmologyTopNParam,
+            bandarmologyFormatParam()
+          ],
+          responses: bandarmologyJsonResponse
         }
       },
       '/api/broksum/availability': {
@@ -1302,6 +1477,41 @@ export function buildOpenApiSchema(baseUrl) {
         }
       },
       schemas: {
+        BandarmologyGenericResponse: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            ticker: { type: ['string', 'null'] },
+            date: { type: ['string', 'null'], format: 'date' },
+            startDate: { type: ['string', 'null'], format: 'date' },
+            endDate: { type: ['string', 'null'], format: 'date' },
+            window: { type: ['integer', 'null'] },
+            period: { type: ['string', 'null'] },
+            topN: { type: ['integer', 'null'] },
+            returned: { type: ['integer', 'null'] },
+            netForeignFlow: { type: ['number', 'null'] },
+            days: { type: ['integer', 'null'] },
+            isComplete: { type: ['boolean', 'null'] },
+            latest: {
+              type: ['object', 'null'],
+              additionalProperties: true,
+              properties: {}
+            },
+            ranges: {
+              type: ['object', 'null'],
+              additionalProperties: true,
+              properties: {}
+            },
+            records: {
+              type: ['array', 'null'],
+              items: {
+                type: 'object',
+                additionalProperties: true,
+                properties: {}
+              }
+            }
+          }
+        },
         BroksumGenericResponse: {
           type: 'object',
           additionalProperties: true,
