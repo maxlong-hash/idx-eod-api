@@ -738,6 +738,7 @@ h1 {
 
 .summary-strip span,
 .metric-grid span,
+.context-grid span,
 .plan-grid span,
 .price-block span,
 .detail-kicker,
@@ -1030,6 +1031,7 @@ tbody tr.selected {
 }
 
 .metric-grid > div,
+.context-grid > div,
 .plan-grid > div {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1038,10 +1040,30 @@ tbody tr.selected {
 }
 
 .metric-grid strong,
+.context-grid strong,
 .plan-grid strong {
   display: block;
   margin-top: 5px;
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.context-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.context-grid > div {
+  min-width: 0;
+}
+
+.context-grid small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
@@ -1468,6 +1490,7 @@ tbody tr.selected {
   }
 
   .metric-grid,
+  .context-grid,
   .plan-grid {
     grid-template-columns: 1fr;
   }

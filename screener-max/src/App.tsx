@@ -437,6 +437,20 @@ function DetailPanel({ result }: { result?: ScanResult }) {
         { label: 'TP2 Fib', value: formatNumber(result.plan.tp2Fib), meta: 'Expansion 1.618' },
       ]
     : [];
+  const latestVolume = result.records[result.records.length - 1]?.volume ?? 0;
+  const contextRows = [
+    { label: 'Trend Short', value: result.trendShort, tone: result.trendShort === 'BULLISH' ? 'pos' : result.trendShort === 'BEARISH' ? 'neg' : '' },
+    { label: 'Trend Medium', value: result.trendMedium, tone: result.trendMedium === 'BULLISH' ? 'pos' : result.trendMedium === 'BEARISH' ? 'neg' : '' },
+    { label: 'Trend Long', value: result.trendLong, tone: result.trendLong === 'BULLISH' ? 'pos' : result.trendLong === 'BEARISH' ? 'neg' : '' },
+    { label: 'Structure', value: result.structure, tone: result.structure.includes('DOWNTREND') ? 'neg' : result.structure.includes('UPTREND') ? 'pos' : '' },
+    { label: 'Vol Power', value: `${result.volPower.toFixed(2)}x`, meta: result.volRegime, tone: result.volPower >= 2 ? 'hot' : result.volPower >= 1.2 ? 'pos' : '' },
+    { label: 'X-Ray Power', value: `B:${result.xrayBuyPower.toFixed(0)}% S:${result.xraySellPower.toFixed(0)}%`, meta: 'candle close pressure', tone: result.xrayBuyPower >= 60 ? 'pos' : result.xraySellPower >= 60 ? 'neg' : '' },
+    { label: 'Alpha Status', value: result.alphaStatus, tone: result.quadrant === 'LAGGING' ? 'neg' : result.quadrant === 'LEADING' ? 'pos' : '' },
+    { label: 'DMI', value: `+${result.plusDi.toFixed(1)} / -${result.minusDi.toFixed(1)}`, meta: `ADX ${result.adx.toFixed(1)}` },
+    { label: 'EMA 21 / 50 / 200', value: [result.ema21, result.ema50, result.ema200].map((item) => (item == null ? '-' : formatNumber(item))).join(' / ') },
+    { label: 'Volume / SMA20', value: `${formatNumber(latestVolume)} / ${result.volumeSma20 == null ? '-' : formatNumber(result.volumeSma20)}` },
+    { label: 'RISEN Score', value: result.risenScore.toFixed(1), meta: [result.risenInsideRolling ? 'inside rolling' : '', result.risenRecentUpBreak ? 'up break' : '', result.risenVolSurge ? 'vol surge' : ''].filter(Boolean).join(' / ') || 'no extra flag' },
+  ];
 
   return (
     <aside className="detail-panel">
@@ -498,6 +512,22 @@ function DetailPanel({ result }: { result?: ScanResult }) {
           <strong>{result.historyQuality === 'FULL' ? `${result.historyBars} bars` : `IPO / SHORT ${result.historyBars} bars`}</strong>
         </div>
       </div>
+
+      <section className="detail-section">
+        <h3>
+          <Activity size={16} />
+          MAX Context
+        </h3>
+        <div className="context-grid">
+          {contextRows.map((item) => (
+            <div key={item.label}>
+              <span>{item.label}</span>
+              <strong className={item.tone}>{item.value}</strong>
+              {item.meta && <small>{item.meta}</small>}
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="detail-section">
         <h3>
@@ -680,26 +710,130 @@ export function App() {
   }
 
   function exportCsv() {
+    const latestExportDate = filteredResults.reduce((current, item) => (item.latestDate > current ? item.latestDate : current), filteredResults[0]?.latestDate ?? new Date().toISOString().slice(0, 10));
     const rows = [
-      ['Ticker', 'Date', 'HistoryBars', 'HistoryQuality', 'Price', 'ChangePct', 'Signal', 'ActiveSignals', 'SniperLocation', 'LastActiveSignals', 'LastActiveDate', 'LastSniperLocation', 'Regime', 'Quadrant', 'RVol', 'AgeDays', 'Score', 'Strategy', 'PortfolioCapital', 'Buy1', 'Buy2', 'Buy3', 'Buy4', 'Weight1', 'Weight2', 'Weight3', 'Weight4', 'Lot1', 'Lot2', 'Lot3', 'Lot4', 'TotalLots', 'TotalDeployed', 'CashLeft', 'AvgEntry', 'TheoreticalAvgEntry', 'RiskBuy1Pct', 'RiskAvgPct', 'RewardRiskBuy1', 'RewardRiskAvg'],
+      [
+        'Ticker',
+        'Date',
+        'LatestAvailableDate',
+        'HistoryBars',
+        'HistoryQuality',
+        'Price',
+        'ChangePct',
+        'Signal',
+        'ActiveSignals',
+        'SignalGroup',
+        'ActiveSignal',
+        'SniperLocation',
+        'LastActiveSignals',
+        'LastActiveDate',
+        'LastSniperLocation',
+        'SignalAgeLabel',
+        'AgeDays',
+        'Trend',
+        'TrendShort',
+        'TrendMedium',
+        'TrendLong',
+        'Structure',
+        'Regime',
+        'RisenScore',
+        'RisenInsideRolling',
+        'RisenRecentUpBreak',
+        'RisenVolSurge',
+        'Quadrant',
+        'AlphaStatus',
+        'RVol',
+        'VolPower',
+        'VolRegime',
+        'XRayBuyPowerPct',
+        'XRaySellPowerPct',
+        'RSI',
+        'ADX',
+        'PlusDI',
+        'MinusDI',
+        'EMA21',
+        'EMA50',
+        'EMA200',
+        'Volume',
+        'VolumeSMA20',
+        'Score',
+        'LogicNotes',
+        'Strategy',
+        'PortfolioCapital',
+        'Buy1',
+        'Buy2',
+        'Buy3',
+        'Buy4',
+        'Weight1',
+        'Weight2',
+        'Weight3',
+        'Weight4',
+        'Lot1',
+        'Lot2',
+        'Lot3',
+        'Lot4',
+        'TotalLots',
+        'TotalDeployed',
+        'CashLeft',
+        'AvgEntry',
+        'TheoreticalAvgEntry',
+        'StopLoss',
+        'TP1',
+        'TP2',
+        'TP2Fib',
+        'RiskBuy1Pct',
+        'RiskAvgPct',
+        'UpsideBuy1Pct',
+        'UpsideAvgPct',
+        'RewardRiskBuy1',
+        'RewardRiskAvg',
+      ],
       ...filteredResults.map((item) => [
         item.ticker,
         item.latestDate,
+        item.latestAvailableDate ?? '',
         item.historyBars,
         item.historyQuality,
         item.price,
         item.changePct,
         item.signal,
         formatSignalList(item.activeSignals),
+        item.signalGroup,
+        item.activeSignal ? 'TRUE' : 'FALSE',
         item.sniperLocation ?? '',
         formatSignalList(item.lastActiveSignals),
         item.lastActiveDate ?? '',
         item.lastSniperLocation ?? '',
-        item.regime,
-        item.quadrant,
-        item.rvol,
+        formatAge(item),
         item.ageDays < 999 ? item.ageDays : '',
+        item.status,
+        item.trendShort,
+        item.trendMedium,
+        item.trendLong,
+        item.structure,
+        item.regime,
+        item.risenScore,
+        item.risenInsideRolling ? 'TRUE' : 'FALSE',
+        item.risenRecentUpBreak ? 'TRUE' : 'FALSE',
+        item.risenVolSurge ? 'TRUE' : 'FALSE',
+        item.quadrant,
+        item.alphaStatus,
+        item.rvol,
+        item.volPower,
+        item.volRegime,
+        item.xrayBuyPower,
+        item.xraySellPower,
+        item.rsi,
+        item.adx,
+        item.plusDi,
+        item.minusDi,
+        item.ema21 ?? '',
+        item.ema50 ?? '',
+        item.ema200 ?? '',
+        item.records[item.records.length - 1]?.volume ?? '',
+        item.volumeSma20 ?? '',
         item.score,
+        item.reason.join(' | '),
         item.plan?.strategy ?? '',
         item.plan?.portfolioCapital ?? '',
         item.plan?.buy1 ?? '',
@@ -719,8 +853,14 @@ export function App() {
         item.plan?.cashLeft ?? '',
         item.plan?.avgEntry ?? '',
         item.plan?.theoreticalAvgEntry ?? '',
+        item.plan?.stopLoss ?? '',
+        item.plan?.tp1 ?? '',
+        item.plan?.tp2 ?? '',
+        item.plan?.tp2Fib ?? '',
         item.plan?.riskPct ?? '',
         item.plan?.avgRiskPct ?? '',
+        item.plan?.upsidePct ?? '',
+        item.plan?.avgUpsidePct ?? '',
         item.plan?.rewardRisk ?? '',
         item.plan?.avgRewardRisk ?? '',
       ]),
@@ -730,7 +870,7 @@ export function App() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `max-screener-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.download = `max-screener-${latestExportDate}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   }

@@ -53,6 +53,8 @@ export type RisenRegime = 'EXPLOSIVE BULL' | 'CRASH / SELL-OFF' | 'NORMAL UPTREN
 
 export type Quadrant = 'LEADING' | 'IMPROVING' | 'WEAKENING' | 'LAGGING' | 'N/A';
 
+export type TrendBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'N/A';
+
 export type MaxSettings = {
   useFvgFilter: boolean;
   gammaAggressive: boolean;
@@ -150,9 +152,28 @@ export type ScanResult = {
   sniperLocation: SniperLocation;
   lastSniperLocation: SniperLocation;
   status: 'UPTREND' | 'DOWNTREND';
+  trendShort: TrendBias;
+  trendMedium: TrendBias;
+  trendLong: TrendBias;
+  structure: string;
   regime: RisenRegime;
+  risenScore: number;
+  risenInsideRolling: boolean;
+  risenRecentUpBreak: boolean;
+  risenVolSurge: boolean;
   quadrant: Quadrant;
+  alphaStatus: string;
   rvol: number;
+  volPower: number;
+  volRegime: string;
+  xrayBuyPower: number;
+  xraySellPower: number;
+  plusDi: number;
+  minusDi: number;
+  ema21: number | null;
+  ema50: number | null;
+  ema200: number | null;
+  volumeSma20: number | null;
   adx: number;
   rsi: number;
   score: number;

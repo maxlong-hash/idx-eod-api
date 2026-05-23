@@ -1,5 +1,5 @@
 import { atr, clamp, crossover, dmi, ema, highest, highestPrevious, lowest, lowestPrevious, pivotHighAt, pivotLowAt, rsi, safeDiv, sma } from './indicators';
-import type { CleanEodRecord, MaxSettings, PlanLevels, Quadrant, RisenRegime, ScanResult, SignalFlags, SignalName, SniperLocation, StrategyName } from './types';
+import type { CleanEodRecord, MaxSettings, PlanLevels, Quadrant, RisenRegime, ScanResult, SignalFlags, SignalName, SniperLocation, StrategyName, TrendBias } from './types';
 
 const MIN_ANALYSIS_BARS = 60;
 
@@ -115,6 +115,45 @@ function signalGroup(signal: SignalName): ScanResult['signalGroup'] {
   if (signal === 'BETA BREAKOUT') return 'breakout';
   if (signal === 'UNSAFE DIP') return 'risk';
   return 'passive';
+}
+
+function trendBias(price: number, reference: number | null | undefined, tolerancePct = 0.2): TrendBias {
+  if (reference == null || !Number.isFinite(reference) || reference <= 0) return 'N/A';
+  const spreadPct = ((price - reference) / reference) * 100;
+  if (spreadPct > tolerancePct) return 'BULLISH';
+  if (spreadPct < -tolerancePct) return 'BEARISH';
+  return 'NEUTRAL';
+}
+
+function buildStructureLabel(status: ScanResult['status'], inStruct: boolean, inDiscount: boolean, premiumZone: boolean): string {
+  if (inStruct && inDiscount) return 'STRUCTURE + DISCOUNT';
+  if (inStruct) return 'DEMAND STRUCTURE';
+  if (inDiscount) return `${status} DISCOUNT`;
+  if (premiumZone) return `${status} PREMIUM`;
+  return status;
+}
+
+function volumeRegime(rvol: number): string {
+  if (rvol >= 2) return 'VOLUME SURGE';
+  if (rvol >= 1.2) return 'EXPANSION';
+  if (rvol >= 0.8) return 'NORMAL';
+  if (rvol > 0) return 'DRY / QUIET';
+  return 'NO VOLUME';
+}
+
+function alphaTheme(signal: SignalName): string {
+  if (signal === 'BETA BREAKOUT') return 'Beta';
+  if (signal.includes('GAMMA') || signal === 'G ACC') return 'Gamma';
+  if (signal.includes('SNIPER')) return 'Sniper';
+  if (signal === 'V-SHAPE') return 'V-Shape';
+  if (signal === 'EARLY SWEEP') return 'Early';
+  if (signal === 'UNSAFE DIP') return 'Risk';
+  return 'Passive';
+}
+
+function alphaStatus(quadrant: Quadrant, signal: SignalName): string {
+  const label = quadrant === 'LAGGING' ? 'LAGGARD' : quadrant;
+  return `${label} (${alphaTheme(signal)})`;
 }
 
 function activeSignalName(signal: SignalName): boolean {
@@ -650,6 +689,20 @@ export function analyzeTicker(
   const last = clean[clean.length - 1];
   const lastIndex = clean.length - 1;
   const currentRvol = volSma20[lastIndex] ? last.volume / volSma20[lastIndex]! : 0;
+  const currentStatus: ScanResult['status'] = supertrend.dir[lastIndex] === 1 ? 'UPTREND' : 'DOWNTREND';
+  const currentHh = highest(high, settings.lookbackLen, lastIndex);
+  const currentLl = lowest(low, settings.lookbackLen, lastIndex);
+  const currentMidRange = currentHh != null && currentLl != null ? (currentHh + currentLl) / 2 : last.close;
+  const currentPremiumZone = last.close >= currentMidRange;
+  const currentMidFib = currentHh != null && currentLl != null ? currentLl + (currentHh - currentLl) * 0.382 : last.close;
+  const currentInDiscount = last.close < currentMidFib;
+  const currentTolerance = last.high - last.low;
+  const currentStructTickTolerance = tickSizeIdx(last.close);
+  let currentInStruct = demTop != null && demBot != null ? last.close <= demTop + currentTolerance + currentStructTickTolerance && last.close >= demBot : false;
+  if (demBot != null && last.close < demBot) currentInStruct = false;
+  const currentRange = last.high - last.low;
+  const xrayBuyPower = currentRange > 0 ? clamp(((last.close - last.low) / currentRange) * 100, 0, 100) : 50;
+  const roundedRvol = rounded(currentRvol, 2);
   const active = latestActiveSignals.length > 0 || activeSignalName(latestSignal);
   const ageDays = lastBuyTime == null ? 999 : Math.round((new Date(last.date).getTime() - lastBuyTime) / 86_400_000);
   const currentSignalBonus = latestActiveSignals.reduce((best, item) => Math.max(best, signalBonus(item)), signalBonus(latestSignal));
@@ -678,10 +731,29 @@ export function analyzeTicker(
     flags: latestFlags,
     sniperLocation: latestSniperLocation,
     lastSniperLocation,
-    status: supertrend.dir[lastIndex] === 1 ? 'UPTREND' : 'DOWNTREND',
+    status: currentStatus,
+    trendShort: trendBias(last.close, ema21[lastIndex]),
+    trendMedium: trendBias(last.close, ema50[lastIndex]),
+    trendLong: trendBias(last.close, ema200[lastIndex]),
+    structure: buildStructureLabel(currentStatus, currentInStruct, currentInDiscount, currentPremiumZone),
     regime: risen[lastIndex].regime,
+    risenScore: rounded(risen[lastIndex].score, 2),
+    risenInsideRolling: risen[lastIndex].insideRolling,
+    risenRecentUpBreak: risen[lastIndex].recentUpBreak,
+    risenVolSurge: risen[lastIndex].volSurge,
     quadrant: quadrants[lastIndex],
-    rvol: rounded(currentRvol, 2),
+    alphaStatus: alphaStatus(quadrants[lastIndex], latestSignal),
+    rvol: roundedRvol,
+    volPower: roundedRvol,
+    volRegime: volumeRegime(currentRvol),
+    xrayBuyPower: rounded(xrayBuyPower, 2),
+    xraySellPower: rounded(100 - xrayBuyPower, 2),
+    plusDi: rounded(dmi14.plusDi[lastIndex] ?? 0, 2),
+    minusDi: rounded(dmi14.minusDi[lastIndex] ?? 0, 2),
+    ema21: ema21[lastIndex] != null ? rounded(ema21[lastIndex]!, 2) : null,
+    ema50: ema50[lastIndex] != null ? rounded(ema50[lastIndex]!, 2) : null,
+    ema200: ema200[lastIndex] != null ? rounded(ema200[lastIndex]!, 2) : null,
+    volumeSma20: volSma20[lastIndex] != null ? rounded(volSma20[lastIndex]!, 0) : null,
     adx: rounded(dmi14.adx[lastIndex] ?? 0, 2),
     rsi: rounded(rsi14[lastIndex] ?? 0, 2),
     score: Math.round(score),
