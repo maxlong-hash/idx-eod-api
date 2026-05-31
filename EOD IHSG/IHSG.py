@@ -1,11 +1,18 @@
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
 import argparse
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import yfinance as yf
 import pandas as pd
 import threading
+
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox, filedialog
+except ModuleNotFoundError:
+    tk = None
+    ttk = None
+    messagebox = None
+    filedialog = None
 
 class EODDownloaderApp:
     DOWNLOAD_TARGETS = [
@@ -328,6 +335,10 @@ def main():
         except Exception as exc:
             print(f"ERROR: {exc}", flush=True)
             return 1
+
+    if tk is None:
+        print("ERROR: Tkinter is required for GUI mode. Use --headless on servers.", flush=True)
+        return 1
 
     root = tk.Tk()
     app = EODDownloaderApp(root)
