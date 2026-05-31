@@ -209,6 +209,22 @@ Contoh mencari ticker tertentu:
 /api/screener/max?ticker=BBCA,BRPT&format=json
 ```
 
+### Otomasi update MaX Screener
+
+CSV MaX Screener bisa dibuat tanpa membuka browser dengan command:
+
+```bash
+npm run screener:update
+```
+
+Command ini membaca `EOD 2023-2026.txt`, menjalankan engine MaX Screener yang sama dengan app UI, lalu menulis file terbaru:
+
+```text
+./screener-max/max-screener-YYYY-MM-DD.csv
+```
+
+Endpoint `GET /api/screener/max` otomatis membaca file `max-screener-*.csv` terbaru pada request berikutnya, jadi command Telegram `/update_screner` atau `/update_screener` cukup menjalankan `npm run screener:update`.
+
 Untuk GPT Action, masukkan schema dari:
 
 ```text
@@ -448,4 +464,25 @@ Kalau server berjalan di VPS, setelah dataset utama diperbarui lakukan rebuild:
 
 ```bash
 sudo docker compose -f docker-compose.vps.yml up -d --build
+```
+
+### Update EOD otomatis dari FMS + IHSG
+
+Untuk workflow Telegram/Hermes, file FMS saham tetap bisa diberikan manual, sementara IHSG dibuat otomatis dari app `EOD IHSG/IHSG.py`:
+
+```bash
+npm run eod:update:auto -- fms260529.txt
+```
+
+Script ini akan:
+
+- membaca tanggal dari file FMS
+- menjalankan `EOD IHSG/IHSG.py --headless` untuk membuat file `IHSGYYYYMMDD.txt`
+- apply file FMS dan IHSG ke `EOD 2023-2026.txt` dengan mode replace existing
+- menjalankan `npm run screener:update` agar endpoint MaX Screener memakai CSV terbaru
+
+Di VPS pastikan Python dependency untuk app IHSG tersedia:
+
+```bash
+python -m pip install pandas yfinance
 ```

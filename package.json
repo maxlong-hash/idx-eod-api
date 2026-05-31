@@ -7,7 +7,9 @@
     "start": "node src/index.js --transport=http",
     "start:http": "node src/index.js --transport=http",
     "start:stdio": "node src/index.js --transport=stdio",
-    "eod:update": "node scripts/apply-eod-update.js"
+    "eod:update": "node scripts/apply-eod-update.js",
+    "eod:update:auto": "node scripts/update-eod-from-fms.js",
+    "screener:update": "node node_modules/tsx/dist/cli.mjs screener-max/scripts/export-max-screener.ts"
   },
   "keywords": [
     "mcp",
@@ -22,6 +24,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "express": "^5.2.1",
+    "tsx": "^4.22.3",
     "zod": "^4.3.6"
   }
 }
