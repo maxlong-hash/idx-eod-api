@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Download, Filter, Gauge, Heart, HelpCircle, Layers3, Play, RefreshCw, Search, Settings2, Shield, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Download, Gauge, Heart, HelpCircle, Layers3, Play, RefreshCw, Search, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
 import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { fetchIhsgHistory, fetchTickerHistory, parseWatchlist } from './lib/api';
 import { buildMaxScreenerCsv, getMaxScreenerExportDate } from './lib/csvExport';
@@ -143,18 +143,6 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function ToggleRow({ label, checked, onChange, icon }: { label: string; checked: boolean; onChange: (value: boolean) => void; icon?: React.ReactNode }) {
-  return (
-    <label className="toggle-row">
-      <span className="toggle-label">
-        {icon}
-        {label}
-      </span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-    </label>
-  );
-}
-
 function GuideModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="guide-overlay" role="presentation" onMouseDown={onClose}>
@@ -240,22 +228,6 @@ function ResultCell({ label, className, children }: { label: string; className?:
   );
 }
 
-function NumericInput({ label, value, onChange, step = 1, min, wide = false }: { label: string; value: number; onChange: (value: number) => void; step?: number; min?: number; wide?: boolean }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <input
-        className={wide ? 'wide-input' : undefined}
-        type="number"
-        value={value}
-        step={step}
-        min={min}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    </label>
-  );
-}
-
 function SelectInput({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
   return (
     <label className="field">
@@ -291,40 +263,12 @@ function SettingsRail({ settings, onChange }: { settings: MaxSettings; onChange:
   const patch = (partial: Partial<MaxSettings>) => onChange({ ...settings, ...partial });
 
   return (
-    <aside className="settings-rail">
-      <div className="rail-title">
-        <Settings2 size={18} />
-        <span>MaX Logic</span>
-      </div>
-
-      <div className="setting-group">
-        <div className="group-heading">Strategy Logic</div>
-        <ToggleRow label="Wajib FVG/Imbalance" checked={settings.useFvgFilter} onChange={(value) => patch({ useFvgFilter: value })} />
-        <ToggleRow label="Lepas Safety Gamma" checked={settings.gammaAggressive} onChange={(value) => patch({ gammaAggressive: value })} icon={<Zap size={15} />} />
-        <ToggleRow label="Anti-Crash ADX" checked={settings.useCrashFilter} onChange={(value) => patch({ useCrashFilter: value })} icon={<Shield size={15} />} />
-        <NumericInput label="Periode Demand" value={settings.lookbackLen} min={50} onChange={(value) => patch({ lookbackLen: value })} />
-        <NumericInput label="V-Shape Vol Factor" value={settings.vVolFactor} step={0.1} min={1} onChange={(value) => patch({ vVolFactor: value })} />
-        <NumericInput label="Batas Crash ADX" value={settings.adxLimit} min={20} onChange={(value) => patch({ adxLimit: value })} />
-        <NumericInput label="Pivot Left" value={settings.pivotLeft} min={2} onChange={(value) => patch({ pivotLeft: value })} />
-        <NumericInput label="Pivot Right" value={settings.pivotRight} min={1} onChange={(value) => patch({ pivotRight: value })} />
-        <ToggleRow label="Filter jika Lagging" checked={settings.useQuadFilter} onChange={(value) => patch({ useQuadFilter: value })} icon={<Filter size={15} />} />
-      </div>
-
+    <aside className="settings-rail trading-plan-rail" aria-label="Trading plan settings">
       <div className="setting-group">
         <div className="group-heading">Trading Plan</div>
         <RupiahInput label="Modal Portfolio (Rp)" value={settings.portfolioCapital} onChange={(value) => patch({ portfolioCapital: value })} />
         <SelectInput label="Grid Strategy" value={settings.strategy} options={STRATEGY_OPTIONS} onChange={(value) => patch({ strategy: value as StrategyName })} />
       </div>
-
-      <div className="setting-group">
-        <div className="group-heading">RISEN</div>
-        <ToggleRow label="Show RISEN Features" checked={settings.showRisen} onChange={(value) => patch({ showRisen: value })} />
-        <NumericInput label="Explosive/Crash %" value={settings.risenThresholdPct} step={0.1} min={0} onChange={(value) => patch({ risenThresholdPct: value })} />
-        <NumericInput label="Breakout Lookback" value={settings.risenLookback} min={1} onChange={(value) => patch({ risenLookback: value })} />
-        <NumericInput label="Vol Mult vs SMA15" value={settings.risenVolumeMultiplier} step={0.1} min={0} onChange={(value) => patch({ risenVolumeMultiplier: value })} />
-        <ToggleRow label="Use Scored Consolidation" checked={settings.risenUseScored} onChange={(value) => patch({ risenUseScored: value })} />
-      </div>
-
     </aside>
   );
 }
@@ -638,6 +582,8 @@ export function App() {
   const activeIndexMeta = useMemo(() => getIndexFilterMeta(indexFilter), [indexFilter]);
   const activeIndexCount = useMemo(() => getIndexConstituentCount(indexFilter), [indexFilter]);
   const activeIndexMembers = useMemo(() => getIndexMemberSet(indexFilter), [indexFilter]);
+  const latestEod = results.find(Boolean)?.latestDate ?? '-';
+  const activeSignalCount = results.filter((item) => item.activeSignal).length;
 
   const indexFilteredResults = useMemo(() => {
     if (!activeIndexMembers) return results;
@@ -728,14 +674,24 @@ export function App() {
 
       <main className="scanner-main">
         <header className="topbar">
-          <div>
+          <div className="topbar-copy">
+            <div className="brand-label">MAX V7.30 · SIGNAL INTELLIGENCE ENGINE</div>
             <div className="app-title">
               <Gauge size={22} />
               <h1>MaX Signal Screener</h1>
             </div>
-            <p>Scan seluruh IDX untuk sinyal Sniper, Beta, Smart Gamma, G Acc, V-Shape, dan Early Sweep.</p>
+            <p>IDX EOD scanner untuk membaca momentum, reversal, breakout, risk flag, dan trading plan.</p>
+            <div className="context-bar">
+              <span className="ctx">Latest EOD: <strong>{latestEod}</strong></span>
+              <span className="ctx">Universe: <strong>{selectedUniverse.length}</strong></span>
+              <span className="ctx">Signals: <strong>{activeSignalCount}</strong></span>
+              <span className="ctx">Index: <strong>{activeIndexMeta.label}</strong></span>
+            </div>
           </div>
           <div className="top-actions">
+            <div className={`regime-badge ${isScanning ? 'scanning' : results.length ? 'active' : ''}`}>
+              {isScanning ? `SCANNING ${progress.done}/${progress.total}` : results.length ? `${filteredResults.length} DISPLAYED` : 'STANDBY'}
+            </div>
             <button className="icon-button" type="button" onClick={exportCsv} disabled={!filteredResults.length} title="Export CSV">
               <Download size={18} />
             </button>
@@ -762,6 +718,7 @@ export function App() {
         </header>
 
         <section className="control-band">
+          <div className="section-header control-header">Scan Control Deck</div>
           <label className="watchlist-box">
             <span>Universe</span>
             <div className="universe-switch">
@@ -858,7 +815,7 @@ export function App() {
         <section className="scanner-card">
           <div className="section-head">
             <div>
-              <h2>Scanner Results</h2>
+              <div className="section-header">Signal Intelligence Board</div>
               <p>
                 {filter === 'signals' ? 'Hanya saham dengan sinyal aktif di candle terbaru.' : 'Mode tampilan mengikuti filter aktif.'}
                 {indexFilter !== 'all' ? ` Filter indeks: ${activeIndexMeta.label}.` : ''}

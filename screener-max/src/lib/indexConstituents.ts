@@ -94,6 +94,20 @@ export const INDEX_CONSTITUENTS = {
     'ACES', 'ASRI', 'AUTO', 'AVIA', 'BFIN', 'BRMS', 'BTPS', 'CFIN', 'ELSA', 'ENRG', 'ERAA', 'ESSA', 'GJTL', 'HEAL', 'KIJA', 'LSIP', 'MAPA', 'MIDI',
     'MNCN', 'MTDL', 'PTRO', 'SCMA', 'SMDR', 'TAPG', 'UNVR',
   ],
+  // Thematic conglomerate watchlists. These are not official IDX indices.
+  KONGLO_PP: ['BRPT', 'BREN', 'TPIA', 'CUAN', 'PTRO', 'CDIA'],
+  KONGLO_HAPSORO: ['RAJA', 'RATU', 'MINA', 'UANG', 'ARKO', 'SINI', 'BUVA', 'PSKT'],
+  KONGLO_AGUAN: ['PANI', 'CBDK'],
+  KONGLO_DJARUM: ['BBCA', 'TOWR', 'BELI', 'RANC', 'SUPR'],
+  KONGLO_SINARMAS: ['INKP', 'TKIM', 'BSDE', 'DMAS', 'DSSA', 'SMMA', 'LIFE', 'SMAR', 'BSIM', 'DUTI', 'GEMS', 'SMDM', 'PLIN', 'IBST', 'UCID'],
+  KONGLO_ASTRA: ['ASII', 'UNTR', 'AALI', 'AUTO', 'ACST', 'ASGR', 'HEAL', 'ARKO'],
+  KONGLO_SALIM: ['ICBP', 'INDF', 'DNET', 'LSIP', 'SIMP', 'ROTI', 'IMAS', 'BINA', 'IMJS', 'FAST', 'META', 'AHAP', 'DCII', 'EMTK', 'MEDC', 'BOLA', 'JECC', 'BBHI', 'BUMI'],
+  KONGLO_LIPPO: ['LPPF', 'LPKR', 'MPPA', 'SILO', 'LPCK', 'MLPL', 'KBLV', 'NOBU', 'MLPT', 'GMTD', 'LPGI', 'LPLI', 'LPPS', 'LPIN'],
+  KONGLO_MNC: ['BMTR', 'MNCN', 'BHIT', 'IPTV', 'KPIG', 'MSIN', 'BABP', 'BCAP', 'MSKY', 'IATA'],
+  KONGLO_EMTEK: ['EMTK', 'SCMA', 'SAME', 'BUKA', 'RSGK'],
+  KONGLO_BAKRIE: ['BNBR', 'BUMI', 'BRMS', 'ENRG', 'BTEL', 'UNSP', 'ELTY', 'DEWA', 'JGLE', 'VIVA', 'MDIA'],
+  KONGLO_TRIPUTRA: ['ADRO', 'ASSA', 'ASLC', 'DRMA', 'DSNG', 'TAPG', 'ESSA', 'KMTR'],
+  KONGLO_TANCORP: ['CLEO', 'AVIA', 'DEPO', 'ZONE', 'RISE', 'CAKK', 'PEVE'],
 } as const;
 
 export type IndexFilterMode = 'all' | keyof typeof INDEX_CONSTITUENTS;
@@ -117,6 +131,19 @@ export const INDEX_FILTER_OPTIONS: Array<{
   { value: 'BISNIS27', label: 'BISNIS-27', description: '27 saham pilihan Bisnis Indonesia.' },
   { value: 'SRIKEHATI', label: 'SRI-KEHATI', description: 'Saham ESG/SRI KEHATI.' },
   { value: 'PEFINDO25', label: 'PEFINDO25', description: '25 saham emiten kecil-menengah pilihan PEFINDO.' },
+  { value: 'KONGLO_PP', label: 'Konglo PP', description: 'Watchlist tematik afiliasi Barito/Prajogo Pangestu.' },
+  { value: 'KONGLO_HAPSORO', label: 'Konglo Hapsoro', description: 'Watchlist tematik afiliasi Happy Hapsoro.' },
+  { value: 'KONGLO_AGUAN', label: 'Konglo Aguan', description: 'Watchlist tematik Agung Sedayu/PIK2.' },
+  { value: 'KONGLO_DJARUM', label: 'Konglo Djarum', description: 'Watchlist tematik Grup Djarum.' },
+  { value: 'KONGLO_SINARMAS', label: 'Konglo Sinarmas', description: 'Watchlist tematik Grup Sinarmas.' },
+  { value: 'KONGLO_ASTRA', label: 'Konglo Astra', description: 'Watchlist tematik Grup Astra.' },
+  { value: 'KONGLO_SALIM', label: 'Konglo Salim', description: 'Watchlist tematik Grup Salim.' },
+  { value: 'KONGLO_LIPPO', label: 'Konglo Lippo', description: 'Watchlist tematik Grup Lippo.' },
+  { value: 'KONGLO_MNC', label: 'Konglo MNC', description: 'Watchlist tematik Grup MNC.' },
+  { value: 'KONGLO_EMTEK', label: 'Konglo Emtek', description: 'Watchlist tematik Grup Emtek.' },
+  { value: 'KONGLO_BAKRIE', label: 'Konglo Bakrie', description: 'Watchlist tematik Grup Bakrie.' },
+  { value: 'KONGLO_TRIPUTRA', label: 'Konglo Triputra', description: 'Watchlist tematik Grup Triputra.' },
+  { value: 'KONGLO_TANCORP', label: 'Konglo Tancorp', description: 'Watchlist tematik Grup Tancorp.' },
 ];
 
 const INDEX_MEMBER_SETS = new Map<IndexFilterMode, Set<string>>();
