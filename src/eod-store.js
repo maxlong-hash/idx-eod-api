@@ -462,6 +462,59 @@ export class EodDataStore {
     };
   }
 
+  getMarketDayRecords(dateInput, { orderBy = 'ticker', limit = null } = {}) {
+    const date = dateInput ? normalizeDateInput(dateInput) : this.latestDate;
+    if (!date) {
+      return null;
+    }
+
+    const records = this.recordsByDate.get(date);
+    if (!records || records.length === 0) {
+      return null;
+    }
+
+    let sorted = records.slice();
+    switch (orderBy) {
+      case 'change_desc':
+        sorted.sort((left, right) => (right.changePercent ?? -Infinity) - (left.changePercent ?? -Infinity));
+        break;
+      case 'change_asc':
+        sorted.sort((left, right) => (left.changePercent ?? Infinity) - (right.changePercent ?? Infinity));
+        break;
+      case 'value_desc':
+        sorted.sort((left, right) => (right.tradeValue ?? 0) - (left.tradeValue ?? 0));
+        break;
+      case 'volume_desc':
+        sorted.sort((left, right) => (right.volume ?? 0) - (left.volume ?? 0));
+        break;
+      case 'frequency_desc':
+        sorted.sort((left, right) => (right.tradeFrequency ?? 0) - (left.tradeFrequency ?? 0));
+        break;
+      case 'ticker':
+      default:
+        sorted.sort((left, right) => left.ticker.localeCompare(right.ticker));
+        break;
+    }
+
+    const maxRows = limit === null || limit === undefined ? null : Math.max(0, Number(limit) || 0);
+    const selected = maxRows === null || maxRows <= 0 ? sorted : sorted.slice(0, maxRows);
+    const gainers = records.filter((record) => (record.change ?? 0) > 0).length;
+    const losers = records.filter((record) => (record.change ?? 0) < 0).length;
+
+    return {
+      date,
+      orderBy,
+      totalTickers: records.length,
+      returned: selected.length,
+      totalVolume: sumBy(records, 'volume'),
+      totalTradeValue: sumBy(records, 'tradeValue'),
+      gainers,
+      losers,
+      unchanged: records.length - gainers - losers,
+      records: selected.map((record) => this.serializeRecord(record))
+    };
+  }
+
   serializeRecord(record) {
     if (!record) {
       return null;

@@ -736,6 +736,7 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
       privacyPolicyEndpoint: '/privacy',
       historyEndpoint: '/api/eod/history',
       ihsgEndpoint: '/api/eod/ihsg',
+      marketEndpoint: '/api/eod/market',
       screenerMaxEndpoint: '/api/screener/max',
       broksumEndpoints: {
         availability: '/api/broksum/availability',
@@ -1503,6 +1504,23 @@ async function startHttpServer(store, ownershipStore, screenerStore, broksumStor
 
   app.get('/api/eod/ihsg', async (request, response) => {
     await sendHistoryResponse(request, response, 'IHSG');
+  });
+
+  app.get('/api/eod/market', async (request, response) => {
+    try {
+      const date = request.query.date ? String(request.query.date) : undefined;
+      const orderBy = String(request.query.orderBy ?? 'ticker').trim().toLowerCase();
+      const limit = request.query.limit ? Number(request.query.limit) : null;
+      const result = store.getMarketDayRecords(date, { orderBy, limit });
+      if (!result) {
+        sendError(response, 404, date ? `No EOD market records found for ${date}` : 'No EOD market records found');
+        return;
+      }
+
+      response.json(result);
+    } catch (error) {
+      sendError(response, 400, error.message);
+    }
   });
 
   app.get('/api/screener/max', requireScreenerAuth, async (request, response) => {

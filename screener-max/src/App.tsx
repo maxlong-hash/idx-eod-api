@@ -1,15 +1,19 @@
-import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Download, Gauge, Heart, HelpCircle, Layers3, Play, RefreshCw, Search, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
-import { useDeferredValue, useMemo, useRef, useState } from 'react';
-import { fetchIhsgHistory, fetchTickerHistory, parseWatchlist } from './lib/api';
+import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Database, Download, Gauge, Heart, HelpCircle, Layers3, LineChart, Play, RefreshCw, Search, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchBroksumMarketRanking, fetchIhsgHistory, fetchMarketSnapshot, fetchTickerHistory, parseWatchlist } from './lib/api';
 import { buildMaxScreenerCsv, getMaxScreenerExportDate } from './lib/csvExport';
+import { buildIhsgImpactRows, buildIhsgImpactRowsFromMarket, buildIhsgMoverGroups, getIhsgFloatMeta, getIhsgIndexSnapshot } from './lib/ihsgImpact';
 import { IDX_UNIVERSE, IDX_UNIVERSE_COUNT } from './lib/idxUniverse';
 import { INDEX_FILTER_OPTIONS, getIndexConstituentCount, getIndexFilterMeta, getIndexMemberSet } from './lib/indexConstituents';
 import { analyzeTicker, DEFAULT_SETTINGS, DEFAULT_WATCHLIST, STRATEGY_OPTIONS } from './lib/maxEngine';
+import type { IhsgImpactRow, IhsgIndexSnapshot, IhsgMoverGroup } from './lib/ihsgImpact';
 import type { IndexFilterMode } from './lib/indexConstituents';
-import type { MaxSettings, ScanResult, SignalName, StrategyName } from './lib/types';
+import type { BroksumMarketRankingRecord } from './lib/api';
+import type { CleanEodRecord, MarketSnapshot, MaxSettings, ScanResult, SignalName, StrategyName } from './lib/types';
 
 type FilterMode = 'signals' | 'all' | 'reversal' | 'momentum' | 'breakout' | 'risk';
 type UniverseMode = 'all-idx' | 'custom';
+type PageMode = 'movers' | 'scanner';
 
 const signalColors: Record<string, string> = {
   'SMART SNIPER': '#00e5ff',
@@ -96,6 +100,25 @@ function formatIdr(value: number) {
   return `Rp ${formatNumber(value)}`;
 }
 
+function formatCompactIdr(value: number) {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1_000_000_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000_000_000).toFixed(2)}Q`;
+  if (abs >= 1_000_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000_000).toFixed(2)}T`;
+  if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(2)}M`;
+  return `${sign}${formatIdr(abs)}`;
+}
+
+function formatCompactQty(value: number) {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(2)}K`;
+  return `${sign}${formatNumber(abs)}`;
+}
+
 function parseRupiahInput(value: string) {
   const digits = value.replace(/\D/g, '');
   return digits ? Number(digits) : 0;
@@ -104,6 +127,77 @@ function parseRupiahInput(value: string) {
 function formatPct(value: number) {
   const prefix = value > 0 ? '+' : '';
   return `${prefix}${value.toFixed(2)}%`;
+}
+
+function formatWeightPct(value: number) {
+  return `${value.toFixed(value >= 10 ? 1 : 2)}%`;
+}
+
+function formatImpactPoints(value: number | null) {
+  if (value == null) return '-';
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${value.toFixed(2)}`;
+}
+
+function csvCell(value: unknown) {
+  const text = value == null ? '' : String(value);
+  if (!/[",\n\r]/.test(text)) return text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function buildMoversCsv(rows: IhsgImpactRow[], foreignBuyRows: BroksumMarketRankingRecord[], foreignSellRows: BroksumMarketRankingRecord[]) {
+  const foreignByTicker = new Map<string, BroksumMarketRankingRecord>();
+  [...foreignBuyRows, ...foreignSellRows].forEach((row) => {
+    if (!foreignByTicker.has(row.ticker)) foreignByTicker.set(row.ticker, row);
+  });
+  const headers = [
+    'ticker',
+    'date',
+    'price',
+    'changePct',
+    'volume',
+    'tradeFrequency',
+    'turnoverValue',
+    'nbsa',
+    'ihsgWeightPct',
+    'rawWeightPct',
+    'impactPct',
+    'impactPoints',
+    'floatPct',
+    'idxFreeFloatPct',
+    'foreignNetValue',
+    'marketCap',
+    'freeFloatMarketCap',
+    'group',
+    'source',
+    'confidence',
+  ];
+  const lines = rows.map((row) => {
+    const foreign = foreignByTicker.get(row.ticker);
+    return [
+      row.ticker,
+      row.latestDate,
+      row.price,
+      row.changePct,
+      row.volume,
+      row.tradeFrequency ?? '',
+      row.turnoverValue,
+      row.nbsa ?? '',
+      row.cappedWeightPct,
+      row.rawWeightPct,
+      row.impactPct,
+      row.impactPoints ?? '',
+      row.floatPct,
+      row.idxFreeFloatPct ?? '',
+      foreign?.foreignNetValue ?? '',
+      row.marketCap,
+      row.freeFloatMarketCap,
+      row.groupLabel,
+      row.source,
+      row.confidence,
+    ].map(csvCell).join(',');
+  });
+  return [headers.join(','), ...lines].join('\n');
 }
 
 function resultMatchesFilter(result: ScanResult, mode: FilterMode) {
@@ -356,12 +450,58 @@ function ResultsTable({ results, selectedTicker, onSelect }: { results: ScanResu
   );
 }
 
-function DetailPanel({ result }: { result?: ScanResult }) {
+function DetailPanel({ result, impactRow }: { result?: ScanResult; impactRow?: IhsgImpactRow }) {
   if (!result) {
+    if (impactRow) {
+      const tone = impactRow.changePct >= 0 ? 'pos' : 'neg';
+      const marketRows = [
+        { label: 'IHSG Weight Est', value: formatWeightPct(impactRow.cappedWeightPct), meta: `${impactRow.source === 'KSEI_RESIDUAL' ? 'KSEI residual' : 'IDX benchmark'} / ${impactRow.confidence}` },
+        { label: 'IHSG Impact', value: formatImpactPoints(impactRow.impactPoints), meta: `${formatPct(impactRow.impactPct)} index return`, tone: impactRow.impactPct >= 0 ? 'pos' : 'neg' },
+        { label: 'Float Ratio', value: formatWeightPct(impactRow.floatPct), meta: impactRow.idxFreeFloatPct == null ? 'no IDX benchmark' : `IDX ${formatWeightPct(impactRow.idxFreeFloatPct)}` },
+        { label: 'Free-float MCap', value: formatCompactIdr(impactRow.freeFloatMarketCap), meta: `MCap ${formatCompactIdr(impactRow.marketCap)}` },
+        { label: 'Volume', value: formatCompactQty(impactRow.volume), meta: `${formatCompactIdr(impactRow.turnoverValue)} turnover` },
+        { label: 'Frequency', value: impactRow.tradeFrequency == null ? '-' : formatCompactQty(impactRow.tradeFrequency), meta: `NBSA ${impactRow.nbsa == null ? '-' : formatCompactIdr(impactRow.nbsa)}` },
+        { label: 'Group', value: impactRow.groupLabel, meta: impactRow.issuer },
+      ];
+
+      return (
+        <aside className="detail-panel">
+          <div className="detail-head">
+            <div>
+              <div className="detail-kicker">Market Mover</div>
+              <h2>{impactRow.ticker}</h2>
+            </div>
+            <span className={`signal-badge ${tone}`}>{formatPct(impactRow.changePct)}</span>
+          </div>
+
+          <div className="price-block">
+            <div>
+              <span>Close</span>
+              <strong>{formatNumber(impactRow.price)}</strong>
+            </div>
+            <div className={tone}>{formatPct(impactRow.changePct)}</div>
+          </div>
+
+          <div className="detail-section">
+            <h3><Database size={16} /> Market Context</h3>
+            <div className="context-grid">
+              {marketRows.map((item) => (
+                <div key={item.label}>
+                  <span>{item.label}</span>
+                  <strong className={item.tone}>{item.value}</strong>
+                  {item.meta && <small>{item.meta}</small>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+      );
+    }
+
     return (
       <aside className="detail-panel empty-detail">
         <Search size={26} />
-        <p>Pilih ticker dari tabel untuk melihat alasan sinyal dan trading plan.</p>
+        <p>Pilih ticker dari tabel untuk melihat detail market, alasan sinyal, dan trading plan.</p>
       </aside>
     );
   }
@@ -384,6 +524,14 @@ function DetailPanel({ result }: { result?: ScanResult }) {
     : [];
   const latestVolume = result.records[result.records.length - 1]?.volume ?? 0;
   const contextRows = [
+    ...(impactRow
+      ? [
+          { label: 'IHSG Weight Est', value: formatWeightPct(impactRow.cappedWeightPct), meta: `${impactRow.source === 'KSEI_RESIDUAL' ? 'KSEI residual' : 'IDX benchmark'} / ${impactRow.confidence}` },
+          { label: 'IHSG Impact', value: formatImpactPoints(impactRow.impactPoints), meta: `${formatPct(impactRow.impactPct)} index return`, tone: impactRow.impactPct >= 0 ? 'pos' : 'neg' },
+          { label: 'Float Ratio', value: formatWeightPct(impactRow.floatPct), meta: impactRow.idxFreeFloatPct == null ? 'no IDX benchmark' : `IDX ${formatWeightPct(impactRow.idxFreeFloatPct)}` },
+          { label: 'Free-float MCap', value: formatCompactIdr(impactRow.freeFloatMarketCap), meta: `MCap ${formatCompactIdr(impactRow.marketCap)}` },
+        ]
+      : []),
     { label: 'Trend Short', value: result.trendShort, tone: result.trendShort === 'BULLISH' ? 'pos' : result.trendShort === 'BEARISH' ? 'neg' : '' },
     { label: 'Trend Medium', value: result.trendMedium, tone: result.trendMedium === 'BULLISH' ? 'pos' : result.trendMedium === 'BEARISH' ? 'neg' : '' },
     { label: 'Trend Long', value: result.trendLong, tone: result.trendLong === 'BULLISH' ? 'pos' : result.trendLong === 'BEARISH' ? 'neg' : '' },
@@ -563,27 +711,365 @@ function SummaryStrip({ results, filtered }: { results: ScanResult[]; filtered: 
   );
 }
 
+function IhsgChart({ records, snapshot }: { records: CleanEodRecord[]; snapshot: IhsgIndexSnapshot | null }) {
+  const chartRecords = records.slice(-90);
+  const values = chartRecords.map((row) => row.close);
+  const width = 760;
+  const height = 180;
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 1;
+  const span = max - min || 1;
+  const points = values
+    .map((value, index) => {
+      const x = (index / Math.max(1, values.length - 1)) * width;
+      const y = height - ((value - min) / span) * height;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
+  const area = points ? `0,${height} ${points} ${width},${height}` : '';
+
+  return (
+    <section className="ihsg-chart-card">
+      <div className="mover-card-head">
+        <div>
+          <div className="section-header">IHSG Pulse</div>
+          <p>{snapshot ? `${snapshot.date} - Close ${formatNumber(snapshot.close, 2)} - ${formatPct(snapshot.changePct)}` : 'IHSG belum dimuat'}</p>
+        </div>
+        <span className={snapshot && snapshot.changePct >= 0 ? 'mover-status pos' : 'mover-status neg'}>
+          {snapshot ? formatImpactPoints(snapshot.close - (snapshot.previousClose ?? snapshot.close)) : '-'}
+        </span>
+      </div>
+      {points ? (
+        <svg className="ihsg-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="IHSG chart">
+          <defs>
+            <linearGradient id="ihsgArea" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="rgba(0, 212, 170, 0.34)" />
+              <stop offset="100%" stopColor="rgba(0, 212, 170, 0)" />
+            </linearGradient>
+          </defs>
+          <path d={`M ${area} Z`} fill="url(#ihsgArea)" />
+          <polyline points={points} fill="none" stroke="var(--cyan)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <div className="mover-empty-line">Belum ada data chart.</div>
+      )}
+    </section>
+  );
+}
+
+function ImpactTable({
+  title,
+  rows,
+  icon,
+  selectedTicker,
+  onSelect,
+}: {
+  title: string;
+  rows: IhsgImpactRow[];
+  icon: React.ReactNode;
+  selectedTicker?: string;
+  onSelect: (ticker: string) => void;
+}) {
+  return (
+    <section className="mover-card">
+      <div className="mover-card-head">
+        <div className="section-header">
+          {icon}
+          {title}
+        </div>
+        <span className="mover-count">{rows.length}</span>
+      </div>
+      {rows.length ? (
+        <div className="impact-list">
+          {rows.map((row) => (
+            <button key={row.ticker} className={`impact-row ${selectedTicker === row.ticker ? 'active' : ''}`} type="button" onClick={() => onSelect(row.ticker)}>
+              <span className="impact-ticker">{row.ticker}</span>
+              <span className={row.changePct >= 0 ? 'pos' : 'neg'}>{formatPct(row.changePct)}</span>
+              <span>{formatWeightPct(row.cappedWeightPct)}</span>
+              <strong className={row.impactPct >= 0 ? 'pos' : 'neg'}>{formatImpactPoints(row.impactPoints)}</strong>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mover-empty-line">Belum ada data.</div>
+      )}
+    </section>
+  );
+}
+
+function ActivityTable({
+  title,
+  rows,
+  metric,
+  icon,
+  selectedTicker,
+  onSelect,
+}: {
+  title: string;
+  rows: IhsgImpactRow[];
+  metric: 'volume' | 'turnover' | 'frequency';
+  icon: React.ReactNode;
+  selectedTicker?: string;
+  onSelect: (ticker: string) => void;
+}) {
+  return (
+    <section className="mover-card">
+      <div className="mover-card-head">
+        <div className="section-header">
+          {icon}
+          {title}
+        </div>
+        <span className="mover-count">{rows.length}</span>
+      </div>
+      {rows.length ? (
+        <div className="activity-list">
+          {rows.map((row) => (
+            <button key={row.ticker} className={`activity-row ${selectedTicker === row.ticker ? 'active' : ''}`} type="button" onClick={() => onSelect(row.ticker)}>
+              <span className="impact-ticker">{row.ticker}</span>
+              <strong>{metric === 'volume' ? formatCompactQty(row.volume) : metric === 'frequency' ? formatCompactQty(row.tradeFrequency ?? 0) : formatCompactIdr(row.turnoverValue)}</strong>
+              <span className={row.changePct >= 0 ? 'pos' : 'neg'}>{formatPct(row.changePct)}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mover-empty-line">Belum ada data.</div>
+      )}
+    </section>
+  );
+}
+
+function ForeignFlowTable({
+  title,
+  rows,
+  icon,
+  selectedTicker,
+  onSelect,
+}: {
+  title: string;
+  rows: BroksumMarketRankingRecord[];
+  icon: React.ReactNode;
+  selectedTicker?: string;
+  onSelect: (ticker: string) => void;
+}) {
+  return (
+    <section className="mover-card">
+      <div className="mover-card-head">
+        <div className="section-header">
+          {icon}
+          {title}
+        </div>
+        <span className="mover-count">{rows.length}</span>
+      </div>
+      {rows.length ? (
+        <div className="activity-list">
+          {rows.map((row) => (
+            <button key={row.ticker} className={`activity-row ${selectedTicker === row.ticker ? 'active' : ''}`} type="button" onClick={() => onSelect(row.ticker)}>
+              <span className="impact-ticker">{row.ticker}</span>
+              <strong className={row.foreignNetValue >= 0 ? 'pos' : 'neg'}>{formatCompactIdr(row.foreignNetValue)}</strong>
+              <span className={(row.changePercent ?? 0) >= 0 ? 'pos' : 'neg'}>{formatPct(row.changePercent ?? 0)}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mover-empty-line">Belum ada data broksum.</div>
+      )}
+    </section>
+  );
+}
+
+function GroupPressureCard({ group }: { group: IhsgMoverGroup }) {
+  const tone = group.impactPct >= 0 ? 'pos' : 'neg';
+  return (
+    <article className="group-pressure-card">
+      <div>
+        <span>{group.label}</span>
+        <strong className={tone}>{formatImpactPoints(group.impactPoints)}</strong>
+      </div>
+      <div className="group-pressure-meta">
+        <span>Weight {formatWeightPct(group.weightPct)}</span>
+        <span>{formatPct(group.avgChangePct)}</span>
+      </div>
+      <div className="group-leaders">
+        {group.leaders.map((row) => (
+          <span key={row.ticker}>{row.ticker}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function MoversPage({
+  marketSnapshot,
+  rows,
+  groups,
+  ihsgRecords,
+  ihsgSnapshot,
+  foreignBuyRows,
+  foreignSellRows,
+  isLoading,
+  canScan,
+  error,
+  selectedTicker,
+  onRefresh,
+  onSelectTicker,
+}: {
+  marketSnapshot: MarketSnapshot | null;
+  rows: IhsgImpactRow[];
+  groups: IhsgMoverGroup[];
+  ihsgRecords: CleanEodRecord[];
+  ihsgSnapshot: IhsgIndexSnapshot | null;
+  foreignBuyRows: BroksumMarketRankingRecord[];
+  foreignSellRows: BroksumMarketRankingRecord[];
+  isLoading: boolean;
+  canScan: boolean;
+  error: string | null;
+  selectedTicker?: string;
+  onRefresh: () => void;
+  onSelectTicker: (ticker: string) => void;
+}) {
+  const meta = getIhsgFloatMeta();
+  const decliners = rows.filter((row) => row.impactPct < 0).sort((a, b) => a.impactPct - b.impactPct).slice(0, 10);
+  const lifters = rows.filter((row) => row.impactPct > 0).sort((a, b) => b.impactPct - a.impactPct).slice(0, 10);
+  const topGainers = [...rows].sort((a, b) => b.changePct - a.changePct).slice(0, 8);
+  const topLosers = [...rows].sort((a, b) => a.changePct - b.changePct).slice(0, 8);
+  const topVolume = [...rows].sort((a, b) => b.volume - a.volume).slice(0, 8);
+  const topTurnover = [...rows].sort((a, b) => b.turnoverValue - a.turnoverValue).slice(0, 8);
+  const topFrequency = [...rows].sort((a, b) => (b.tradeFrequency ?? 0) - (a.tradeFrequency ?? 0)).slice(0, 8);
+  const driftRows = rows
+    .filter((row) => row.confidence === 'LOW' || Math.abs(row.driftPct ?? 0) >= 12)
+    .sort((a, b) => Math.abs(b.driftPct ?? 0) - Math.abs(a.driftPct ?? 0))
+    .slice(0, 8);
+  const totalPressure = decliners.reduce((sum, row) => sum + (row.impactPoints ?? 0), 0);
+  const totalSupport = lifters.reduce((sum, row) => sum + (row.impactPoints ?? 0), 0);
+  const estimatedCoverage = rows.reduce((sum, row) => sum + row.cappedWeightPct, 0);
+
+  if (!marketSnapshot) {
+    return (
+      <section className="movers-page">
+        <IhsgChart records={ihsgRecords} snapshot={ihsgSnapshot} />
+        {error && (
+          <div className="error-box">
+            <strong>Market movers gagal dimuat</strong>
+            <p>{error}</p>
+          </div>
+        )}
+        <div className="movers-empty-state">
+          <LineChart size={32} />
+          <h2>{isLoading ? 'Memuat market movers' : 'Movers belum dimuat'}</h2>
+          <p>Dashboard ini membaca EOD market terbaru, bobot KSEI residual, impact IHSG, value, volume, frequency, dan foreign flow tanpa memakai hasil scanner.</p>
+          <button className="primary-button" type="button" onClick={onRefresh} disabled={!canScan || isLoading}>
+            <RefreshCw size={18} />
+            {isLoading ? 'Loading' : 'Muat Movers'}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="movers-page">
+      <IhsgChart records={ihsgRecords} snapshot={ihsgSnapshot} />
+
+      <div className="mover-summary-grid">
+        <div>
+          <AlertTriangle size={18} />
+          <span>Pressure</span>
+          <strong className="neg">{formatImpactPoints(totalPressure)}</strong>
+        </div>
+        <div>
+          <TrendingUp size={18} />
+          <span>Support</span>
+          <strong className="pos">{formatImpactPoints(totalSupport)}</strong>
+        </div>
+        <div>
+          <Database size={18} />
+          <span>Market Value</span>
+          <strong>{formatCompactIdr(marketSnapshot.totalTradeValue)}</strong>
+        </div>
+        <div>
+          <Clock3 size={18} />
+          <span>Market Breadth</span>
+          <strong>{marketSnapshot.gainers}/{marketSnapshot.losers}</strong>
+        </div>
+      </div>
+
+      <div className="mover-source-note">
+        EOD market {marketSnapshot.date} - {marketSnapshot.totalTickers} tickers - weight coverage {formatWeightPct(estimatedCoverage)} - KSEI residual snapshot {meta.kseiSnapshotDate ?? '-'} - IDX benchmark {meta.benchmarkReportPeriod ?? '-'} - cap 9%
+      </div>
+
+      <div className="mover-grid">
+        <ImpactTable title="Pemberat IHSG" rows={decliners} icon={<ArrowDownRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ImpactTable title="Penopang IHSG" rows={lifters} icon={<ArrowUpRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ImpactTable title="Top Gainer" rows={topGainers} icon={<TrendingUp size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ImpactTable title="Top Loser" rows={topLosers} icon={<ArrowDownRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ActivityTable title="Top Volume" rows={topVolume} metric="volume" icon={<BarChart3 size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ActivityTable title="Top Turnover" rows={topTurnover} metric="turnover" icon={<Database size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ActivityTable title="Top Frequency" rows={topFrequency} metric="frequency" icon={<Activity size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ForeignFlowTable title="Net Foreign Buy" rows={foreignBuyRows} icon={<ArrowUpRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ForeignFlowTable title="Net Foreign Sell" rows={foreignSellRows} icon={<ArrowDownRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+      </div>
+
+      <section className="mover-card wide-mover-card">
+        <div className="mover-card-head">
+          <div className="section-header">
+            <BarChart3 size={16} />
+            Group Pressure
+          </div>
+          <span className="mover-count">{groups.length}</span>
+        </div>
+        <div className="group-pressure-grid">
+          {groups.slice(0, 8).map((group) => (
+            <GroupPressureCard key={group.id} group={group} />
+          ))}
+        </div>
+      </section>
+
+      <ImpactTable title="Float Drift Watch" rows={driftRows} icon={<Database size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+    </section>
+  );
+}
+
 export function App() {
   const [settings, setSettings] = useState<MaxSettings>(DEFAULT_SETTINGS);
+  const [activePage, setActivePage] = useState<PageMode>('movers');
   const [universeMode, setUniverseMode] = useState<UniverseMode>('all-idx');
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [filter, setFilter] = useState<FilterMode>('signals');
   const [indexFilter, setIndexFilter] = useState<IndexFilterMode>('all');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ScanResult[]>([]);
+  const [marketSnapshot, setMarketSnapshot] = useState<MarketSnapshot | null>(null);
+  const [ihsgHistory, setIhsgHistory] = useState<CleanEodRecord[]>([]);
+  const [foreignBuyRows, setForeignBuyRows] = useState<BroksumMarketRankingRecord[]>([]);
+  const [foreignSellRows, setForeignSellRows] = useState<BroksumMarketRankingRecord[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [moversError, setMoversError] = useState<string | null>(null);
   const [selectedTicker, setSelectedTicker] = useState<string | undefined>();
   const [isScanning, setIsScanning] = useState(false);
+  const [isLoadingMovers, setIsLoadingMovers] = useState(false);
+  const [moversLoaded, setMoversLoaded] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === '1');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const abortRef = useRef<AbortController | null>(null);
+  const moversAbortRef = useRef<AbortController | null>(null);
   const deferredQuery = useDeferredValue(query);
 
   const activeIndexMeta = useMemo(() => getIndexFilterMeta(indexFilter), [indexFilter]);
   const activeIndexCount = useMemo(() => getIndexConstituentCount(indexFilter), [indexFilter]);
   const activeIndexMembers = useMemo(() => getIndexMemberSet(indexFilter), [indexFilter]);
   const latestEod = results.find(Boolean)?.latestDate ?? '-';
+  const visibleLatestEod = activePage === 'movers' ? marketSnapshot?.date ?? '-' : latestEod;
   const activeSignalCount = results.filter((item) => item.activeSignal).length;
+  const ihsgSnapshot = useMemo(() => getIhsgIndexSnapshot(ihsgHistory), [ihsgHistory]);
+  const scannerImpactRows = useMemo(
+    () => buildIhsgImpactRows(results, { ihsgPreviousClose: ihsgSnapshot?.previousClose ?? null }),
+    [ihsgSnapshot?.previousClose, results],
+  );
+  const marketImpactRows = useMemo(
+    () => buildIhsgImpactRowsFromMarket(marketSnapshot?.records ?? [], { ihsgPreviousClose: ihsgSnapshot?.previousClose ?? null }),
+    [ihsgSnapshot?.previousClose, marketSnapshot?.records],
+  );
+  const ihsgMoverGroups = useMemo(() => buildIhsgMoverGroups(marketImpactRows), [marketImpactRows]);
 
   const indexFilteredResults = useMemo(() => {
     if (!activeIndexMembers) return results;
@@ -599,14 +1085,69 @@ export function App() {
   }, [deferredQuery, filter, indexFilteredResults]);
 
   const selected = useMemo(() => {
-    return filteredResults.find((item) => item.ticker === selectedTicker) ?? filteredResults[0] ?? results[0];
-  }, [filteredResults, results, selectedTicker]);
+    if (activePage === 'movers') {
+      return selectedTicker ? results.find((item) => item.ticker === selectedTicker) : undefined;
+    }
+    return results.find((item) => item.ticker === selectedTicker) ?? filteredResults[0] ?? results[0];
+  }, [activePage, filteredResults, results, selectedTicker]);
+  const selectedImpactRow = useMemo(() => {
+    const ticker = selectedTicker ?? selected?.ticker;
+    if (!ticker) return undefined;
+    const sourceRows = activePage === 'movers' ? marketImpactRows : scannerImpactRows;
+    return sourceRows.find((row) => row.ticker === ticker);
+  }, [activePage, marketImpactRows, scannerImpactRows, selected?.ticker, selectedTicker]);
 
   const selectedUniverse = useMemo(() => {
     return universeMode === 'all-idx' ? IDX_UNIVERSE : parseWatchlist(watchlist);
   }, [universeMode, watchlist]);
 
+  const visibleUniverseCount = activePage === 'movers' ? marketSnapshot?.totalTickers ?? IDX_UNIVERSE_COUNT : selectedUniverse.length;
   const canScan = !isScanning && selectedUniverse.length > 0;
+
+  useEffect(() => {
+    if (activePage === 'movers' && !moversLoaded && !isLoadingMovers) {
+      void loadMarketMovers();
+    }
+  }, [activePage, isLoadingMovers, moversLoaded]);
+
+  async function loadMarketMovers() {
+    moversAbortRef.current?.abort();
+    const controller = new AbortController();
+    moversAbortRef.current = controller;
+    setIsLoadingMovers(true);
+    setMoversError(null);
+
+    try {
+      const [market, ihsgRecords] = await Promise.all([
+        fetchMarketSnapshot(undefined, controller.signal),
+        fetchIhsgHistory(settings.startDate, controller.signal).catch(() => []),
+      ]);
+      if (controller.signal.aborted) return;
+
+      setMarketSnapshot(market);
+      setMoversLoaded(true);
+      if (ihsgRecords.length) setIhsgHistory(ihsgRecords);
+
+      const [foreignBuy, foreignSell] = await Promise.allSettled([
+        fetchBroksumMarketRanking('foreign_accumulation', market.date, 12, controller.signal),
+        fetchBroksumMarketRanking('foreign_distribution', market.date, 12, controller.signal),
+      ]);
+      if (controller.signal.aborted) return;
+
+      setForeignBuyRows(foreignBuy.status === 'fulfilled' ? foreignBuy.value : []);
+      setForeignSellRows(foreignSell.status === 'fulfilled' ? foreignSell.value : []);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setMoversLoaded(true);
+        setMarketSnapshot(null);
+        setForeignBuyRows([]);
+        setForeignSellRows([]);
+        setMoversError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      if (!controller.signal.aborted) setIsLoadingMovers(false);
+    }
+  }
 
   async function runScan() {
     const tickers = selectedUniverse;
@@ -619,11 +1160,13 @@ export function App() {
     setProgress({ done: 0, total: tickers.length });
     setErrors([]);
     setResults([]);
+    setIhsgHistory([]);
     setSelectedTicker(undefined);
 
     const nextResults: ScanResult[] = [];
     try {
       const benchmark = await fetchIhsgHistory(settings.startDate, controller.signal).catch(() => []);
+      setIhsgHistory(benchmark);
       const concurrency = universeMode === 'all-idx' ? 8 : 5;
       for (let i = 0; i < tickers.length; i += concurrency) {
         const batch = tickers.slice(i, i + concurrency);
@@ -668,6 +1211,37 @@ export function App() {
     URL.revokeObjectURL(url);
   }
 
+  function exportMoversCsv() {
+    if (!marketImpactRows.length) return;
+    const csv = buildMoversCsv(marketImpactRows, foreignBuyRows, foreignSellRows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `max-market-movers-${marketSnapshot?.date ?? 'latest'}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExport() {
+    if (activePage === 'movers') {
+      exportMoversCsv();
+      return;
+    }
+    exportCsv();
+  }
+
+  const exportDisabled = activePage === 'movers' ? !marketImpactRows.length : !filteredResults.length;
+  const statusClass = activePage === 'movers'
+    ? isLoadingMovers ? 'scanning' : marketSnapshot ? 'active' : ''
+    : isScanning ? 'scanning' : results.length ? 'active' : '';
+  const statusText = activePage === 'movers'
+    ? isLoadingMovers ? 'LOADING MARKET' : marketSnapshot ? `${marketImpactRows.length} MOVERS` : 'STANDBY'
+    : isScanning ? `SCANNING ${progress.done}/${progress.total}` : results.length ? `${filteredResults.length} DISPLAYED` : 'STANDBY';
+  const primaryAction = activePage === 'movers'
+    ? { label: isLoadingMovers ? 'Loading' : 'Refresh Movers', icon: <RefreshCw size={18} />, onClick: loadMarketMovers, disabled: isLoadingMovers }
+    : { label: 'Scan Sekarang', icon: <Play size={18} />, onClick: runScan, disabled: !canScan };
+
   return (
     <div className="app-shell">
       <SettingsRail settings={settings} onChange={setSettings} />
@@ -675,24 +1249,34 @@ export function App() {
       <main className="scanner-main">
         <header className="topbar">
           <div className="topbar-copy">
-            <div className="brand-label">MAX V7.30 · SIGNAL INTELLIGENCE ENGINE</div>
+            <div className="brand-label">MAX V7.30 - SIGNAL INTELLIGENCE ENGINE</div>
             <div className="app-title">
               <Gauge size={22} />
               <h1>MaX Signal Screener</h1>
             </div>
             <p>IDX EOD scanner untuk membaca momentum, reversal, breakout, risk flag, dan trading plan.</p>
             <div className="context-bar">
-              <span className="ctx">Latest EOD: <strong>{latestEod}</strong></span>
-              <span className="ctx">Universe: <strong>{selectedUniverse.length}</strong></span>
+              <span className="ctx">Latest EOD: <strong>{visibleLatestEod}</strong></span>
+              <span className="ctx">Universe: <strong>{visibleUniverseCount}</strong></span>
               <span className="ctx">Signals: <strong>{activeSignalCount}</strong></span>
               <span className="ctx">Index: <strong>{activeIndexMeta.label}</strong></span>
             </div>
+            <nav className="view-tabs" aria-label="MaX page tabs">
+              <button className={activePage === 'movers' ? 'active' : ''} type="button" onClick={() => setActivePage('movers')}>
+                <LineChart size={16} />
+                Movers
+              </button>
+              <button className={activePage === 'scanner' ? 'active' : ''} type="button" onClick={() => setActivePage('scanner')}>
+                <Gauge size={16} />
+                Scanner
+              </button>
+            </nav>
           </div>
           <div className="top-actions">
-            <div className={`regime-badge ${isScanning ? 'scanning' : results.length ? 'active' : ''}`}>
-              {isScanning ? `SCANNING ${progress.done}/${progress.total}` : results.length ? `${filteredResults.length} DISPLAYED` : 'STANDBY'}
+            <div className={`regime-badge ${statusClass}`}>
+              {statusText}
             </div>
-            <button className="icon-button" type="button" onClick={exportCsv} disabled={!filteredResults.length} title="Export CSV">
+            <button className="icon-button" type="button" onClick={handleExport} disabled={exportDisabled} title="Export CSV">
               <Download size={18} />
             </button>
             <button className="guide-button" type="button" onClick={() => setIsGuideOpen(true)}>
@@ -709,14 +1293,32 @@ export function App() {
                 Stop
               </button>
             ) : (
-              <button className="primary-button" type="button" onClick={runScan} disabled={!canScan}>
-                <Play size={18} />
-                Scan Sekarang
+              <button className="primary-button" type="button" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>
+                {primaryAction.icon}
+                {primaryAction.label}
               </button>
             )}
           </div>
         </header>
 
+        {activePage === 'movers' ? (
+          <MoversPage
+            marketSnapshot={marketSnapshot}
+            rows={marketImpactRows}
+            groups={ihsgMoverGroups}
+            ihsgRecords={ihsgHistory}
+            ihsgSnapshot={ihsgSnapshot}
+            foreignBuyRows={foreignBuyRows}
+            foreignSellRows={foreignSellRows}
+            isLoading={isLoadingMovers}
+            canScan={!isLoadingMovers}
+            error={moversError}
+            selectedTicker={selectedTicker}
+            onRefresh={loadMarketMovers}
+            onSelectTicker={setSelectedTicker}
+          />
+        ) : (
+          <>
         <section className="control-band">
           <div className="section-header control-header">Scan Control Deck</div>
           <label className="watchlist-box">
@@ -844,9 +1446,11 @@ export function App() {
             </div>
           )}
         </section>
+          </>
+        )}
       </main>
 
-      <DetailPanel result={selected} />
+      <DetailPanel result={selected} impactRow={selectedImpactRow} />
       {isGuideOpen && <GuideModal onClose={() => setIsGuideOpen(false)} />}
     </div>
   );

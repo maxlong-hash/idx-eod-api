@@ -24,6 +24,11 @@ export type CleanEodRecord = {
   close: number;
   volume: number;
   changePercent: number;
+  tradeFrequency?: number | null;
+  tradeValue?: number | null;
+  nbsa?: number | null;
+  previousClose?: number | null;
+  change?: number | null;
 };
 
 export type EodHistoryResponse = {
@@ -33,6 +38,31 @@ export type EodHistoryResponse = {
   latestAvailableDate: string | null;
   returned: number;
   records: EodRecord[];
+};
+
+export type EodMarketResponse = {
+  date: string;
+  orderBy: string;
+  totalTickers: number;
+  returned: number;
+  totalVolume: number | null;
+  totalTradeValue: number | null;
+  gainers: number;
+  losers: number;
+  unchanged: number;
+  records: EodRecord[];
+};
+
+export type MarketSnapshot = {
+  date: string;
+  totalTickers: number;
+  returned: number;
+  totalVolume: number;
+  totalTradeValue: number;
+  gainers: number;
+  losers: number;
+  unchanged: number;
+  records: CleanEodRecord[];
 };
 
 export type SignalName =

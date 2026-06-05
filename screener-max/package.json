@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "generate:ihsg-float": "node scripts/generate-ihsg-float-data.mjs",
     "export:max": "node ../node_modules/tsx/dist/cli.mjs scripts/export-max-screener.ts",
     "build": "tsc && vite build",
     "preview": "vite preview"

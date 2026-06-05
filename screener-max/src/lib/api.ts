@@ -1,4 +1,4 @@
-import type { CleanEodRecord, EodHistoryResponse } from './types';
+import type { CleanEodRecord, EodHistoryResponse, EodMarketResponse, MarketSnapshot } from './types';
 
 const API_BASE = '';
 
@@ -14,6 +14,11 @@ function cleanRecords(response: EodHistoryResponse): CleanEodRecord[] {
       close: Number(row.close),
       volume: Number(row.volume),
       changePercent: Number(row.changePercent ?? 0),
+      tradeFrequency: row.tradeFrequency == null ? null : Number(row.tradeFrequency),
+      tradeValue: row.tradeValue == null ? null : Number(row.tradeValue),
+      nbsa: row.nbsa == null ? null : Number(row.nbsa),
+      previousClose: row.previousClose == null ? null : Number(row.previousClose),
+      change: row.change == null ? null : Number(row.change),
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -48,6 +53,55 @@ export async function fetchIhsgHistory(startDate: string, signal?: AbortSignal) 
   });
   const payload = await fetchJson<EodHistoryResponse>(`/api/eod/ihsg?${query.toString()}`, signal);
   return cleanRecords(payload);
+}
+
+export async function fetchMarketSnapshot(date?: string, signal?: AbortSignal): Promise<MarketSnapshot> {
+  const query = new URLSearchParams({
+    orderBy: 'ticker',
+  });
+  if (date) query.set('date', date);
+  const payload = await fetchJson<EodMarketResponse>(`/api/eod/market?${query.toString()}`, signal);
+  return {
+    date: payload.date,
+    totalTickers: payload.totalTickers,
+    returned: payload.returned,
+    totalVolume: Number(payload.totalVolume ?? 0),
+    totalTradeValue: Number(payload.totalTradeValue ?? 0),
+    gainers: payload.gainers,
+    losers: payload.losers,
+    unchanged: payload.unchanged,
+    records: cleanRecords({ records: payload.records } as EodHistoryResponse),
+  };
+}
+
+export type BroksumMarketRankingSide = 'foreign_accumulation' | 'foreign_distribution' | 'value';
+
+export type BroksumMarketRankingRecord = {
+  ticker: string;
+  date: string;
+  close: number | null;
+  changePercent: number | null;
+  totalValue: number;
+  foreignNetValue: number;
+  localNetValue: number;
+  governmentNetValue: number;
+  brokerConcentrationPct: number;
+};
+
+export async function fetchBroksumMarketRanking(
+  side: BroksumMarketRankingSide,
+  date: string,
+  limit = 12,
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({
+    side,
+    date,
+    limit: String(limit),
+    format: 'json',
+  });
+  const payload = await fetchJson<{ records: BroksumMarketRankingRecord[] }>(`/api/broksum/market/ranking?${query.toString()}`, signal);
+  return payload.records;
 }
 
 export function parseWatchlist(value: string): string[] {
