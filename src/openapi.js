@@ -970,6 +970,58 @@ export function buildOpenApiSchema(baseUrl) {
           }
         }
       },
+      '/api/eod/market': {
+        get: {
+          operationId: 'getEodMarketSnapshot',
+          summary: 'Get one-day EOD market snapshot',
+          description:
+            'Returns all ticker EOD records for one market date. Use this for standalone market movers, top value, top volume, frequency, gainers, losers, and IHSG impact calculations.',
+          parameters: [
+            {
+              name: 'date',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                format: 'date'
+              },
+              description: 'Optional market date YYYY-MM-DD. Defaults to the latest available EOD date.'
+            },
+            {
+              name: 'orderBy',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'string',
+                enum: ['ticker', 'change_desc', 'change_asc', 'value_desc', 'volume_desc', 'frequency_desc'],
+                default: 'ticker'
+              },
+              description: 'Sort order for returned market records.'
+            },
+            {
+              name: 'limit',
+              in: 'query',
+              required: false,
+              schema: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 2000
+              },
+              description: 'Optional maximum rows. Omit to return all ticker records for the date.'
+            }
+          ],
+          responses: {
+            '200': {
+              description: 'One-day EOD market snapshot.',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/EodMarketResponse' }
+                }
+              }
+            }
+          }
+        }
+      },
       '/api/ownership/holders': {
         get: {
           operationId: 'getOwnershipHolders',
@@ -1990,6 +2042,38 @@ export function buildOpenApiSchema(baseUrl) {
             }
           },
           required: ['ticker', 'startDate', 'endDate', 'latestAvailableDate', 'returned', 'records']
+        },
+        EodMarketResponse: {
+          type: 'object',
+          properties: {
+            date: { type: 'string', format: 'date' },
+            orderBy: { type: 'string' },
+            totalTickers: { type: 'integer' },
+            returned: { type: 'integer' },
+            totalVolume: { type: ['number', 'null'] },
+            totalTradeValue: { type: ['number', 'null'] },
+            gainers: { type: 'integer' },
+            losers: { type: 'integer' },
+            unchanged: { type: 'integer' },
+            records: {
+              type: 'array',
+              items: {
+                $ref: '#/components/schemas/EodRecord'
+              }
+            }
+          },
+          required: [
+            'date',
+            'orderBy',
+            'totalTickers',
+            'returned',
+            'totalVolume',
+            'totalTradeValue',
+            'gainers',
+            'losers',
+            'unchanged',
+            'records'
+          ]
         },
         EodHistoryFileResponse: {
           type: 'object',
