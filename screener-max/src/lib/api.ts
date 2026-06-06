@@ -88,20 +88,23 @@ export type BroksumMarketRankingRecord = {
   brokerConcentrationPct: number;
 };
 
+export type BroksumMarketRankingResponse = {
+  date: string;
+  side: BroksumMarketRankingSide;
+  totalMatches: number;
+  returned: number;
+  records: BroksumMarketRankingRecord[];
+};
+
 export async function fetchBroksumMarketRanking(
   side: BroksumMarketRankingSide,
-  date: string,
+  date?: string | null,
   limit = 12,
   signal?: AbortSignal,
 ) {
-  const query = new URLSearchParams({
-    side,
-    date,
-    limit: String(limit),
-    format: 'json',
-  });
-  const payload = await fetchJson<{ records: BroksumMarketRankingRecord[] }>(`/api/broksum/market/ranking?${query.toString()}`, signal);
-  return payload.records;
+  const query = new URLSearchParams({ side, limit: String(limit), format: 'json' });
+  if (date) query.set('date', date);
+  return fetchJson<BroksumMarketRankingResponse>(`/api/broksum/market/ranking?${query.toString()}`, signal);
 }
 
 export function parseWatchlist(value: string): string[] {

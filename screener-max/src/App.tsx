@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Database, Download, Gauge, Heart, HelpCircle, Layers3, LineChart, Play, RefreshCw, Search, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, BookOpen, CheckCircle2, ChevronRight, Clock3, Database, Download, Eye, EyeOff, Gauge, Heart, HelpCircle, Layers3, LineChart, Play, RefreshCw, Search, SlidersHorizontal, StopCircle, Target, TrendingUp, X, Zap } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchBroksumMarketRanking, fetchIhsgHistory, fetchMarketSnapshot, fetchTickerHistory, parseWatchlist } from './lib/api';
 import { buildMaxScreenerCsv, getMaxScreenerExportDate } from './lib/csvExport';
@@ -353,16 +353,32 @@ function RupiahInput({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-function SettingsRail({ settings, onChange }: { settings: MaxSettings; onChange: (settings: MaxSettings) => void }) {
+function SettingsRail({
+  settings,
+  onChange,
+  isVisible,
+  onToggle,
+}: {
+  settings: MaxSettings;
+  onChange: (settings: MaxSettings) => void;
+  isVisible: boolean;
+  onToggle: () => void;
+}) {
   const patch = (partial: Partial<MaxSettings>) => onChange({ ...settings, ...partial });
 
   return (
-    <aside className="settings-rail trading-plan-rail" aria-label="Trading plan settings">
-      <div className="setting-group">
-        <div className="group-heading">Trading Plan</div>
-        <RupiahInput label="Modal Portfolio (Rp)" value={settings.portfolioCapital} onChange={(value) => patch({ portfolioCapital: value })} />
-        <SelectInput label="Grid Strategy" value={settings.strategy} options={STRATEGY_OPTIONS} onChange={(value) => patch({ strategy: value as StrategyName })} />
-      </div>
+    <aside className={`settings-rail trading-plan-rail ${isVisible ? '' : 'is-collapsed'}`} aria-label="Trading plan settings">
+      <button className="portfolio-toggle-button" type="button" onClick={onToggle} aria-expanded={isVisible} title={isVisible ? 'Hide portfolio' : 'Show portfolio'}>
+        {isVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+        <span>{isVisible ? 'Hide Portfolio' : 'Portfolio'}</span>
+      </button>
+      {isVisible && (
+        <div className="setting-group">
+          <div className="group-heading">Trading Plan</div>
+          <RupiahInput label="Modal Portfolio (Rp)" value={settings.portfolioCapital} onChange={(value) => patch({ portfolioCapital: value })} />
+          <SelectInput label="Grid Strategy" value={settings.strategy} options={STRATEGY_OPTIONS} onChange={(value) => patch({ strategy: value as StrategyName })} />
+        </div>
+      )}
     </aside>
   );
 }
@@ -450,7 +466,97 @@ function ResultsTable({ results, selectedTicker, onSelect }: { results: ScanResu
   );
 }
 
-function DetailPanel({ result, impactRow }: { result?: ScanResult; impactRow?: IhsgImpactRow }) {
+function MiniCandleChart({
+  records,
+  isLoading,
+  error,
+}: {
+  records: CleanEodRecord[];
+  isLoading: boolean;
+  error: string | null;
+}) {
+  const rows = records
+    .filter((row) => row.open != null && row.high != null && row.low != null && row.close != null && row.volume != null)
+    .slice(-48);
+  const latest = rows.at(-1);
+
+  if (!rows.length) {
+    return (
+      <section className="mini-candle-card">
+        <div className="mini-candle-head">
+          <span>EOD Candle / Volume</span>
+          <strong>{isLoading ? 'Loading' : '-'}</strong>
+        </div>
+        <div className="mini-candle-empty">{error ?? (isLoading ? 'Memuat chart ticker...' : 'Belum ada data chart ticker.')}</div>
+      </section>
+    );
+  }
+
+  const width = 340;
+  const height = 164;
+  const padX = 12;
+  const padTop = 12;
+  const priceHeight = 96;
+  const volumeGap = 12;
+  const volumeHeight = 36;
+  const innerWidth = width - padX * 2;
+  const highs = rows.map((row) => row.high);
+  const lows = rows.map((row) => row.low);
+  const maxHigh = Math.max(...highs);
+  const minLow = Math.min(...lows);
+  const priceSpan = maxHigh - minLow || 1;
+  const maxVolume = Math.max(...rows.map((row) => row.volume), 1);
+  const xStep = rows.length > 1 ? innerWidth / (rows.length - 1) : innerWidth;
+  const bodyWidth = Math.max(3, Math.min(8, (innerWidth / rows.length) * 0.58));
+  const priceY = (value: number) => padTop + (1 - (value - minLow) / priceSpan) * priceHeight;
+  const volumeTop = padTop + priceHeight + volumeGap;
+  const latestTone = latest && latest.close >= latest.open ? 'pos' : 'neg';
+
+  return (
+    <section className="mini-candle-card">
+      <div className="mini-candle-head">
+        <span>EOD Candle / Volume</span>
+        <strong className={latestTone}>{latest ? `${latest.date} / ${formatCompactQty(latest.volume)}` : '-'}</strong>
+      </div>
+      <svg className="mini-candle-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Mini candlestick chart with volume">
+        <line className="mini-candle-baseline" x1={padX} x2={width - padX} y1={volumeTop - 6} y2={volumeTop - 6} />
+        {rows.map((row, index) => {
+          const x = rows.length > 1 ? padX + index * xStep : padX + innerWidth / 2;
+          const openY = priceY(row.open);
+          const closeY = priceY(row.close);
+          const highY = priceY(row.high);
+          const lowY = priceY(row.low);
+          const isUp = row.close >= row.open;
+          const bodyY = Math.min(openY, closeY);
+          const bodyHeight = Math.max(1.4, Math.abs(closeY - openY));
+          const volumeBarHeight = Math.max(1, (row.volume / maxVolume) * volumeHeight);
+          return (
+            <g key={`${row.date}-${index}`} className={isUp ? 'mini-candle-up' : 'mini-candle-down'}>
+              <line className="mini-candle-wick" x1={x} x2={x} y1={highY} y2={lowY} />
+              <rect className="mini-candle-body" x={x - bodyWidth / 2} y={bodyY} width={bodyWidth} height={bodyHeight} rx="1.2" />
+              <rect className="mini-volume-bar" x={x - bodyWidth / 2} y={volumeTop + volumeHeight - volumeBarHeight} width={bodyWidth} height={volumeBarHeight} rx="1" />
+            </g>
+          );
+        })}
+      </svg>
+      {error && <div className="mini-candle-foot neg">{error}</div>}
+    </section>
+  );
+}
+
+function DetailPanel({
+  result,
+  impactRow,
+  chartRecords,
+  isChartLoading,
+  chartError,
+}: {
+  result?: ScanResult;
+  impactRow?: IhsgImpactRow;
+  chartRecords: CleanEodRecord[];
+  isChartLoading: boolean;
+  chartError: string | null;
+}) {
   if (!result) {
     if (impactRow) {
       const tone = impactRow.changePct >= 0 ? 'pos' : 'neg';
@@ -481,6 +587,8 @@ function DetailPanel({ result, impactRow }: { result?: ScanResult; impactRow?: I
             </div>
             <div className={tone}>{formatPct(impactRow.changePct)}</div>
           </div>
+
+          <MiniCandleChart records={chartRecords} isLoading={isChartLoading} error={chartError} />
 
           <div className="detail-section">
             <h3><Database size={16} /> Market Context</h3>
@@ -566,6 +674,7 @@ function DetailPanel({ result, impactRow }: { result?: ScanResult; impactRow?: I
       </div>
 
       <Sparkline values={result.sparkline} color={color} />
+      <MiniCandleChart records={chartRecords} isLoading={isChartLoading} error={chartError} />
 
       <div className="metric-grid">
         <div>
@@ -716,20 +825,28 @@ function IhsgChart({ records, snapshot }: { records: CleanEodRecord[]; snapshot:
   const values = chartRecords.map((row) => row.close);
   const width = 760;
   const height = 180;
+  const chartPadding = 16;
+  const chartWidth = width - chartPadding * 2;
+  const chartHeight = height - chartPadding * 2;
   const min = values.length ? Math.min(...values) : 0;
   const max = values.length ? Math.max(...values) : 1;
   const span = max - min || 1;
-  const points = values
-    .map((value, index) => {
-      const x = (index / Math.max(1, values.length - 1)) * width;
-      const y = height - ((value - min) / span) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(' ');
-  const area = points ? `0,${height} ${points} ${width},${height}` : '';
+  const chartPoints = values.map((value, index) => {
+    const x = chartPadding + (index / Math.max(1, values.length - 1)) * chartWidth;
+    const y = chartPadding + (1 - (value - min) / span) * chartHeight;
+    return { x, y };
+  });
+  const points = chartPoints.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
+  const lastPoint = chartPoints.at(-1);
+  const baseline = height - chartPadding;
+  const area = points ? `${chartPadding},${baseline} ${points} ${width - chartPadding},${baseline}` : '';
+  const isNegative = Boolean(snapshot && snapshot.changePct < 0);
+  const chartToneClass = isNegative ? 'is-negative' : 'is-positive';
+  const areaStartColor = isNegative ? 'rgba(255, 51, 51, 0.28)' : 'rgba(0, 212, 170, 0.34)';
+  const areaEndColor = isNegative ? 'rgba(255, 51, 51, 0)' : 'rgba(0, 212, 170, 0)';
 
   return (
-    <section className="ihsg-chart-card">
+    <section className={`ihsg-chart-card ${chartToneClass}`}>
       <div className="mover-card-head">
         <div>
           <div className="section-header">IHSG Pulse</div>
@@ -740,15 +857,21 @@ function IhsgChart({ records, snapshot }: { records: CleanEodRecord[]; snapshot:
         </span>
       </div>
       {points ? (
-        <svg className="ihsg-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="IHSG chart">
+        <svg className={`ihsg-chart ${chartToneClass}`} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="IHSG chart">
           <defs>
             <linearGradient id="ihsgArea" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="rgba(0, 212, 170, 0.34)" />
-              <stop offset="100%" stopColor="rgba(0, 212, 170, 0)" />
+              <stop offset="0%" stopColor={areaStartColor} />
+              <stop offset="100%" stopColor={areaEndColor} />
             </linearGradient>
           </defs>
           <path d={`M ${area} Z`} fill="url(#ihsgArea)" />
-          <polyline points={points} fill="none" stroke="var(--cyan)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={points} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          {lastPoint && (
+            <g className={`ihsg-pulse-marker ${chartToneClass}`} transform={`translate(${lastPoint.x.toFixed(2)} ${lastPoint.y.toFixed(2)})`}>
+              <circle className="ihsg-pulse-ring" r="7" />
+              <circle className="ihsg-pulse-dot" r="4.4" />
+            </g>
+          )}
         </svg>
       ) : (
         <div className="mover-empty-line">Belum ada data chart.</div>
@@ -842,21 +965,28 @@ function ForeignFlowTable({
   title,
   rows,
   icon,
+  date,
+  note,
   selectedTicker,
   onSelect,
 }: {
   title: string;
   rows: BroksumMarketRankingRecord[];
   icon: React.ReactNode;
+  date?: string | null;
+  note?: string | null;
   selectedTicker?: string;
   onSelect: (ticker: string) => void;
 }) {
   return (
     <section className="mover-card">
       <div className="mover-card-head">
-        <div className="section-header">
-          {icon}
-          {title}
+        <div>
+          <div className="section-header">
+            {icon}
+            {title}
+          </div>
+          {date && <p>Broksum {date}</p>}
         </div>
         <span className="mover-count">{rows.length}</span>
       </div>
@@ -871,7 +1001,7 @@ function ForeignFlowTable({
           ))}
         </div>
       ) : (
-        <div className="mover-empty-line">Belum ada data broksum.</div>
+        <div className="mover-empty-line">{note ?? 'Belum ada data broksum.'}</div>
       )}
     </section>
   );
@@ -906,6 +1036,8 @@ function MoversPage({
   ihsgSnapshot,
   foreignBuyRows,
   foreignSellRows,
+  foreignFlowDate,
+  foreignFlowNote,
   isLoading,
   canScan,
   error,
@@ -920,6 +1052,8 @@ function MoversPage({
   ihsgSnapshot: IhsgIndexSnapshot | null;
   foreignBuyRows: BroksumMarketRankingRecord[];
   foreignSellRows: BroksumMarketRankingRecord[];
+  foreignFlowDate: string | null;
+  foreignFlowNote: string | null;
   isLoading: boolean;
   canScan: boolean;
   error: string | null;
@@ -1005,8 +1139,8 @@ function MoversPage({
         <ActivityTable title="Top Volume" rows={topVolume} metric="volume" icon={<BarChart3 size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
         <ActivityTable title="Top Turnover" rows={topTurnover} metric="turnover" icon={<Database size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
         <ActivityTable title="Top Frequency" rows={topFrequency} metric="frequency" icon={<Activity size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
-        <ForeignFlowTable title="Net Foreign Buy" rows={foreignBuyRows} icon={<ArrowUpRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
-        <ForeignFlowTable title="Net Foreign Sell" rows={foreignSellRows} icon={<ArrowDownRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ForeignFlowTable title="Net Foreign Buy" rows={foreignBuyRows} date={foreignFlowDate} note={foreignFlowNote} icon={<ArrowUpRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
+        <ForeignFlowTable title="Net Foreign Sell" rows={foreignSellRows} date={foreignFlowDate} note={foreignFlowNote} icon={<ArrowDownRight size={16} />} selectedTicker={selectedTicker} onSelect={onSelectTicker} />
       </div>
 
       <section className="mover-card wide-mover-card">
@@ -1042,12 +1176,18 @@ export function App() {
   const [ihsgHistory, setIhsgHistory] = useState<CleanEodRecord[]>([]);
   const [foreignBuyRows, setForeignBuyRows] = useState<BroksumMarketRankingRecord[]>([]);
   const [foreignSellRows, setForeignSellRows] = useState<BroksumMarketRankingRecord[]>([]);
+  const [foreignFlowDate, setForeignFlowDate] = useState<string | null>(null);
+  const [foreignFlowNote, setForeignFlowNote] = useState<string | null>(null);
+  const [detailHistoryRecords, setDetailHistoryRecords] = useState<CleanEodRecord[]>([]);
+  const [isDetailHistoryLoading, setIsDetailHistoryLoading] = useState(false);
+  const [detailHistoryError, setDetailHistoryError] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [moversError, setMoversError] = useState<string | null>(null);
   const [selectedTicker, setSelectedTicker] = useState<string | undefined>();
   const [isScanning, setIsScanning] = useState(false);
   const [isLoadingMovers, setIsLoadingMovers] = useState(false);
   const [moversLoaded, setMoversLoaded] = useState(false);
+  const [isPortfolioVisible, setIsPortfolioVisible] = useState(true);
   const [isGuideOpen, setIsGuideOpen] = useState(() => new URLSearchParams(window.location.search).get('guide') === '1');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const abortRef = useRef<AbortController | null>(null);
@@ -1096,6 +1236,9 @@ export function App() {
     const sourceRows = activePage === 'movers' ? marketImpactRows : scannerImpactRows;
     return sourceRows.find((row) => row.ticker === ticker);
   }, [activePage, marketImpactRows, scannerImpactRows, selected?.ticker, selectedTicker]);
+  const detailTicker = selectedTicker ?? selected?.ticker ?? selectedImpactRow?.ticker;
+  const selectedHasDetailRecords = Boolean(selected && detailTicker === selected.ticker && selected.records.length);
+  const detailChartRecords = selectedHasDetailRecords ? selected?.records ?? [] : detailHistoryRecords;
 
   const selectedUniverse = useMemo(() => {
     return universeMode === 'all-idx' ? IDX_UNIVERSE : parseWatchlist(watchlist);
@@ -1110,12 +1253,43 @@ export function App() {
     }
   }, [activePage, isLoadingMovers, moversLoaded]);
 
+  useEffect(() => {
+    if (!detailTicker || selectedHasDetailRecords) {
+      setDetailHistoryRecords([]);
+      setIsDetailHistoryLoading(false);
+      setDetailHistoryError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setIsDetailHistoryLoading(true);
+    setDetailHistoryError(null);
+
+    fetchTickerHistory(detailTicker, settings.startDate, controller.signal)
+      .then((history) => {
+        if (controller.signal.aborted) return;
+        setDetailHistoryRecords(history.records);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setDetailHistoryRecords([]);
+        setDetailHistoryError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsDetailHistoryLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [detailTicker, selectedHasDetailRecords, settings.startDate]);
+
   async function loadMarketMovers() {
     moversAbortRef.current?.abort();
     const controller = new AbortController();
     moversAbortRef.current = controller;
     setIsLoadingMovers(true);
     setMoversError(null);
+    setForeignFlowDate(null);
+    setForeignFlowNote(null);
 
     try {
       const [market, ihsgRecords] = await Promise.all([
@@ -1128,20 +1302,53 @@ export function App() {
       setMoversLoaded(true);
       if (ihsgRecords.length) setIhsgHistory(ihsgRecords);
 
-      const [foreignBuy, foreignSell] = await Promise.allSettled([
-        fetchBroksumMarketRanking('foreign_accumulation', market.date, 12, controller.signal),
-        fetchBroksumMarketRanking('foreign_distribution', market.date, 12, controller.signal),
-      ]);
+      const loadForeignFlows = async (date?: string) => {
+        const [foreignBuy, foreignSell] = await Promise.allSettled([
+          fetchBroksumMarketRanking('foreign_accumulation', date, 12, controller.signal),
+          fetchBroksumMarketRanking('foreign_distribution', date, 12, controller.signal),
+        ]);
+        const buyPayload = foreignBuy.status === 'fulfilled' ? foreignBuy.value : null;
+        const sellPayload = foreignSell.status === 'fulfilled' ? foreignSell.value : null;
+        const errors = [foreignBuy, foreignSell]
+          .flatMap((item) => (item.status === 'rejected' ? [item.reason] : []))
+          .map((reason) => (reason instanceof Error ? reason.message : String(reason)));
+
+        return {
+          date: buyPayload?.date ?? sellPayload?.date ?? date ?? null,
+          buyRows: buyPayload?.records ?? [],
+          sellRows: sellPayload?.records ?? [],
+          errors,
+        };
+      };
+
+      let foreignFlow = await loadForeignFlows(market.date);
+      const hasDatedRows = foreignFlow.buyRows.length > 0 || foreignFlow.sellRows.length > 0;
+      if (!hasDatedRows) {
+        const latestForeignFlow = await loadForeignFlows(undefined);
+        if (latestForeignFlow.buyRows.length > 0 || latestForeignFlow.sellRows.length > 0) {
+          foreignFlow = latestForeignFlow;
+        }
+      }
       if (controller.signal.aborted) return;
 
-      setForeignBuyRows(foreignBuy.status === 'fulfilled' ? foreignBuy.value : []);
-      setForeignSellRows(foreignSell.status === 'fulfilled' ? foreignSell.value : []);
+      setForeignBuyRows(foreignFlow.buyRows);
+      setForeignSellRows(foreignFlow.sellRows);
+      setForeignFlowDate(foreignFlow.date);
+      setForeignFlowNote(
+        foreignFlow.buyRows.length || foreignFlow.sellRows.length
+          ? foreignFlow.date && foreignFlow.date !== market.date
+            ? `Memakai broksum ${foreignFlow.date}; EOD market ${market.date}.`
+            : null
+          : foreignFlow.errors[0] ?? `Belum ada data broksum net foreign untuk ${market.date}.`,
+      );
     } catch (error) {
       if (!controller.signal.aborted) {
         setMoversLoaded(true);
         setMarketSnapshot(null);
         setForeignBuyRows([]);
         setForeignSellRows([]);
+        setForeignFlowDate(null);
+        setForeignFlowNote(null);
         setMoversError(error instanceof Error ? error.message : String(error));
       }
     } finally {
@@ -1243,8 +1450,8 @@ export function App() {
     : { label: 'Scan Sekarang', icon: <Play size={18} />, onClick: runScan, disabled: !canScan };
 
   return (
-    <div className="app-shell">
-      <SettingsRail settings={settings} onChange={setSettings} />
+    <div className={`app-shell ${isPortfolioVisible ? '' : 'portfolio-collapsed'}`}>
+      <SettingsRail settings={settings} onChange={setSettings} isVisible={isPortfolioVisible} onToggle={() => setIsPortfolioVisible((value) => !value)} />
 
       <main className="scanner-main">
         <header className="topbar">
@@ -1310,6 +1517,8 @@ export function App() {
             ihsgSnapshot={ihsgSnapshot}
             foreignBuyRows={foreignBuyRows}
             foreignSellRows={foreignSellRows}
+            foreignFlowDate={foreignFlowDate}
+            foreignFlowNote={foreignFlowNote}
             isLoading={isLoadingMovers}
             canScan={!isLoadingMovers}
             error={moversError}
@@ -1450,7 +1659,7 @@ export function App() {
         )}
       </main>
 
-      <DetailPanel result={selected} impactRow={selectedImpactRow} />
+      <DetailPanel result={selected} impactRow={selectedImpactRow} chartRecords={detailChartRecords} isChartLoading={isDetailHistoryLoading} chartError={detailHistoryError} />
       {isGuideOpen && <GuideModal onClose={() => setIsGuideOpen(false)} />}
     </div>
   );

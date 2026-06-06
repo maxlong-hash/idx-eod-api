@@ -1,7 +1,7 @@
 const DEFAULT_EOD_API_BASE_URL = 'https://eod.maxlong.my.id';
 
 function getApiKey() {
-  return process.env.EOD_API_KEY || process.env.API_KEY || '';
+  return process.env.EOD_API_KEY || process.env.API_KEY || process.env.api_key_endpoint_eoddanbroksum || '';
 }
 
 function copyQueryParams(sourceUrl, targetUrl) {
