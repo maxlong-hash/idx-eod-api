@@ -360,7 +360,7 @@ export function buildOpenApiSchema(baseUrl) {
         get: {
           operationId: 'getBroksumMarketRanking',
           summary: 'Rank market broksum flows',
-          description: 'Ranks all tickers on one date by accumulation, distribution, foreign flow, concentration, or total value.',
+          description: 'Ranks all tickers on one date by accumulation, distribution, daily net foreign flow, concentration, or total value.',
           parameters: [
             {
               name: 'date',
@@ -375,7 +375,7 @@ export function buildOpenApiSchema(baseUrl) {
               required: false,
               schema: {
                 type: 'string',
-                enum: ['accumulation', 'distribution', 'foreign_accumulation', 'foreign_distribution', 'concentration', 'value'],
+                enum: ['accumulation', 'distribution', 'net_foreign_buy', 'net_foreign_sell', 'foreign_accumulation', 'foreign_distribution', 'concentration', 'value'],
                 default: 'accumulation'
               },
               description: 'Ranking mode.'

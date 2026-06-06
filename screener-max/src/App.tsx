@@ -1304,8 +1304,8 @@ export function App() {
 
       const loadForeignFlows = async (date?: string) => {
         const [foreignBuy, foreignSell] = await Promise.allSettled([
-          fetchBroksumMarketRanking('foreign_accumulation', date, 12, controller.signal),
-          fetchBroksumMarketRanking('foreign_distribution', date, 12, controller.signal),
+          fetchBroksumMarketRanking('net_foreign_buy', date, 12, controller.signal),
+          fetchBroksumMarketRanking('net_foreign_sell', date, 12, controller.signal),
         ]);
         const buyPayload = foreignBuy.status === 'fulfilled' ? foreignBuy.value : null;
         const sellPayload = foreignSell.status === 'fulfilled' ? foreignSell.value : null;
@@ -1322,13 +1322,6 @@ export function App() {
       };
 
       let foreignFlow = await loadForeignFlows(market.date);
-      const hasDatedRows = foreignFlow.buyRows.length > 0 || foreignFlow.sellRows.length > 0;
-      if (!hasDatedRows) {
-        const latestForeignFlow = await loadForeignFlows(undefined);
-        if (latestForeignFlow.buyRows.length > 0 || latestForeignFlow.sellRows.length > 0) {
-          foreignFlow = latestForeignFlow;
-        }
-      }
       if (controller.signal.aborted) return;
 
       setForeignBuyRows(foreignFlow.buyRows);

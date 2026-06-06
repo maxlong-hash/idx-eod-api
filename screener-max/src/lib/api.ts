@@ -74,7 +74,7 @@ export async function fetchMarketSnapshot(date?: string, signal?: AbortSignal): 
   };
 }
 
-export type BroksumMarketRankingSide = 'foreign_accumulation' | 'foreign_distribution' | 'value';
+export type BroksumMarketRankingSide = 'net_foreign_buy' | 'net_foreign_sell' | 'foreign_accumulation' | 'foreign_distribution' | 'value';
 
 export type BroksumMarketRankingRecord = {
   ticker: string;

@@ -1324,12 +1324,21 @@ export class BroksumDataStore {
 
     const records = summaries.filter(Boolean);
 
-    const ranked = records.sort((left, right) => {
+    let rankedSource = records;
+    if (side === 'net_foreign_buy' || side === 'foreign_accumulation') {
+      rankedSource = records.filter((row) => row.foreignNetValue > 0);
+    } else if (side === 'net_foreign_sell' || side === 'foreign_distribution') {
+      rankedSource = records.filter((row) => row.foreignNetValue < 0);
+    }
+
+    const ranked = rankedSource.sort((left, right) => {
       switch (side) {
         case 'distribution':
           return (right.topNetSeller?.netValueAbs ?? 0) - (left.topNetSeller?.netValueAbs ?? 0);
+        case 'net_foreign_buy':
         case 'foreign_accumulation':
           return right.foreignNetValue - left.foreignNetValue;
+        case 'net_foreign_sell':
         case 'foreign_distribution':
           return left.foreignNetValue - right.foreignNetValue;
         case 'concentration':
